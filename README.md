@@ -39,6 +39,10 @@ npm run build
 npm run preview
 ```
 
+線上展示：
+
+https://xxxx00001235-tech.github.io/noc-network-incident-copilot/
+
 ## Demo 帳號
 
 | 角色 | 帳號 | 密碼 |
