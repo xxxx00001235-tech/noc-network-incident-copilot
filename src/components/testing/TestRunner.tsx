@@ -17,11 +17,14 @@ const seed:TestResult[]=[
 ];
 export function TestRunner({incidentId}:{incidentId?:string}){
  const [items,setItems]=useState(seed); const [running,setRunning]=useState(false); const notify=useNocStore(s=>s.notify); const addTimeline=useNocStore(s=>s.addTimeline);
- useEffect(()=>{if(!running)return; const idx=items.findIndex(x=>x.status==='等待'); if(idx<0){setRunning(false);notify('模擬查測完成：疑似光纖或 SFP 異常');return}
-  setItems(v=>v.map((x,i)=>i===idx?{...x,status:'執行中'}:x));
-  const t=setTimeout(()=>setItems(v=>v.map((x,i)=>i===idx?{...x,status:idx<5||idx===9?'失敗':'成功'}:x)),380); return()=>clearTimeout(t);
+ useEffect(()=>{if(!running)return;
+  const activeIdx=items.findIndex(x=>x.status==='執行中');
+  if(activeIdx>=0){const t=setTimeout(()=>setItems(v=>v.map((x,i)=>i===activeIdx?{...x,status:activeIdx<5||activeIdx===9?'失敗':'成功'}:x)),380);return()=>clearTimeout(t)}
+  const nextIdx=items.findIndex(x=>x.status==='等待');
+  if(nextIdx<0){setRunning(false);notify('模擬查測完成：疑似光纖或 SFP 異常');return}
+  setItems(v=>v.map((x,i)=>i===nextIdx?{...x,status:'執行中'}:x));
  },[items,running,notify]);
- const start=()=>{setItems(seed);setRunning(true); if(incidentId)addTimeline(incidentId,'開始一鍵模擬查測')};
+ const start=()=>{setItems(seed.map(item=>({...item})));setRunning(true); if(incidentId)addTimeline(incidentId,'開始一鍵模擬查測')};
  const copy=()=>navigator.clipboard.writeText(items.map(x=>`${x.name}：${x.result}（${x.explanation}）`).join('\n')).then(()=>notify('已複製查測結果'));
  return <Card title="一鍵模擬查測" action={<button className="btn primary" onClick={start} disabled={running}>{running?<LoaderCircle className="spin" size={16}/>:<Play size={16}/>} {items.some(x=>x.status!=='等待')?'重新查測':'開始查測'}</button>}>
   <div className="test-list">{items.map(x=><div className="test-row" key={x.id}>{x.status==='等待'?<Circle/>:x.status==='執行中'?<LoaderCircle className="spin"/>:x.status==='成功'?<CheckCircle2 className="ok"/>:<XCircle className="bad"/>}<div><b>{x.name}</b><small>{x.status==='等待'?'等待執行':x.status==='執行中'?'執行中…':`${x.result} · ${x.explanation}`}</small></div></div>)}</div>
