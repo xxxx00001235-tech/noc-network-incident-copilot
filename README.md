@@ -27,10 +27,47 @@ React 18、TypeScript、Vite、React Router、Zustand、Lucide React、Recharts 
 
 ## 安裝與執行
 
+首次使用先安裝相依套件：
+
 ```bash
 npm install
+```
+
+僅在本機開發：
+
+```bash
 npm run dev
 ```
+
+### 區域網路展示模式
+
+報告當天，先讓展示電腦與手機／其他電腦連上同一個 Wi-Fi，再於專案目錄執行：
+
+```bash
+npm run dev:lan
+```
+
+此指令會以 `0.0.0.0` 作為 host，並固定使用 port `5173`。在展示電腦上開啟：
+
+```text
+http://localhost:5173/
+```
+
+查詢展示電腦的區域網路 IPv4：
+
+```powershell
+ipconfig
+```
+
+在輸出中找到目前使用中的 Wi-Fi 網路介面，記下「IPv4 位址」，例如 `192.168.1.100`。接著在同一個 Wi-Fi 中的手機或其他電腦開啟：
+
+```text
+http://192.168.1.100:5173/
+```
+
+請將範例 IP 替換為展示電腦實際的 IPv4。第一次啟動時，Windows 防火牆可能詢問是否允許 Node.js 通訊，請勾選「私人網路」並允許存取；不要開放公用網路。若無法連線，請確認裝置位於同一個 Wi-Fi、Windows 網路設定為私人網路，且防火牆允許 TCP port `5173` 或 Node.js。
+
+此模式僅供可信任的現場區域網路展示，不需要設定小烏龜、分享器或連接埠轉送。終止展示伺服器請在終端機按 `Ctrl+C`。
 
 正式編譯：
 
