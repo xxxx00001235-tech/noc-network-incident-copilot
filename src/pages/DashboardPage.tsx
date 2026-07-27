@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, Res
 import { useNavigate } from 'react-router-dom';
 import { useNocStore } from '../store/useNocStore';
 import { Badge, Card } from '../components/common/UI';
+import { LocalMonitorCard } from '../components/monitoring/LocalMonitorCard';
 const hourly=[{h:'06',n:2},{h:'07',n:4},{h:'08',n:8},{h:'09',n:14},{h:'10',n:7},{h:'11',n:5},{h:'12',n:3}];
 const weekly=[{d:'7/19',n:5},{d:'7/20',n:8},{d:'7/21',n:6},{d:'7/22',n:11},{d:'7/23',n:7},{d:'7/24',n:9},{d:'7/25',n:4}];
 export function DashboardPage(){
@@ -15,6 +16,7 @@ export function DashboardPage(){
   <div className="grid charts"><Card title="告警嚴重度分布"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={pie} dataKey="value" innerRadius={55} outerRadius={83}>{pie.map(x=><Cell key={x.name} fill={x.c}/>)}</Pie><Tooltip/></PieChart></ResponsiveContainer><div className="legend-row">{pie.map(x=><span key={x.name}><i style={{background:x.c}}/>{x.name} {x.value}</span>)}</div></Card>
   <Card title="每小時告警數量"><ResponsiveContainer width="100%" height={250}><BarChart data={hourly}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="h"/><YAxis/><Tooltip/><Bar dataKey="n" fill="#28c5c7" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></Card>
   <Card title="最近七天事件趨勢"><ResponsiveContainer width="100%" height={250}><LineChart data={weekly}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="d"/><YAxis/><Tooltip/><Line type="monotone" dataKey="n" stroke="#8a7dff" strokeWidth={3}/></LineChart></ResponsiveContainer></Card></div>
+  <LocalMonitorCard/>
   <Card title="目前重大事件" action={<button className="link-btn" onClick={()=>nav('/incidents')}>查看所有事件 <ArrowUpRight/></button>}><div className="major-events">{incidents.filter(i=>i.severity==='Critical').map(i=><button key={i.id} onClick={()=>nav('/incidents')}><div><Badge tone="critical">Critical</Badge><strong>{i.title}</strong><small>{i.id} · {i.started}</small></div><div className="event-impact"><span>影響設備 <b>{i.affectedDevices}</b></span><span>模擬使用者 <b>{i.affectedUsers}</b></span><Badge tone="info">{i.status}</Badge></div></button>)}</div></Card>
  </div>
 }

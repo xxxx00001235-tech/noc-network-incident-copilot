@@ -120,3 +120,73 @@ src/
 - 增加拖曳式拓樸編輯器與更多圖表
 - 在取得正式資安與權限設計後，再建立可替換的後端介面
 - 加入 i18n、多租戶與更細緻的 RBAC 權限
+## 本機唯讀監控（期末版本第一階段）
+
+公開網站預設維持 `demo` 模式，不會讀取使用者的電腦。若要在目前這台
+Windows 電腦測試 CPU、記憶體、磁碟與網路統計，可執行：
+
+```powershell
+npm run dev:full
+```
+
+再開啟 `http://localhost:5173/`。本機監控 API 位於
+`http://127.0.0.1:3001`，固定只監聽 loopback，不會開放到區域網路或
+網際網路。只要使用 `localhost` 開啟系統，前端就會自動使用本機即時資料；
+Cloudflare 與 GitHub Pages 則維持安全的展示資料。`dev:full` 不需要手動修改 `.env`。
+若 5173 已被舊的開發伺服器占用，先在舊終端機按 `Ctrl+C`。可分別測試：
+
+```powershell
+npm run dev:monitor
+npm run test:monitor
+```
+
+`.env`、SQLite、執行紀錄與本機資料均已由 `.gitignore` 排除。API 不會
+回傳使用者名稱、電腦名稱、MAC Address、序號、個人檔案、瀏覽紀錄或憑證。
+
+監控服務每 5 秒寫入 SQLite，保留最近約 24 小時資料，並依下列門檻建立及
+解除告警：
+
+- CPU：Warning 70%、Critical 90%
+- 記憶體：Warning 75%、Critical 90%
+- 系統磁碟：Warning 80%、Critical 90%
+
+歷史與告警 API：
+
+```text
+GET /api/metrics/history?limit=120
+GET /api/alerts?limit=50
+```
+
+若未來透過 Cloudflare Tunnel 提供遠端查看，必須將
+`MONITOR_REQUIRE_CF_ACCESS=true`，並先建立 Cloudflare Access 應用程式。
+此時 API 會拒絕沒有 `CF-Access-Jwt-Assertion` 的要求。
+
+## Backend 基礎架構
+
+本專案保留既有 `server/`，以增量方式加入 PostgreSQL 基礎，不建立平行專案。
+
+### 啟動與測試
+
+```bash
+pnpm install
+cp .env.example .env
+pnpm run dev:backend
+pnpm run test:backend
+```
+
+基礎端點：
+
+- `GET /api/health`：程序存活狀態，不依賴 PostgreSQL。
+- `GET /api/ready`：PostgreSQL readiness；未設定或無法連線時回傳 HTTP 503。
+- `GET /api/version`：Backend 名稱、版本與環境。
+- 既有本機監控端點完整保留。
+
+### PostgreSQL Migration
+
+確認 Ubuntu 的 `noc-postgres` 已啟動，並在 `.env` 填入正確的 `PGPASSWORD` 後執行：
+
+```bash
+pnpm run db:migrate
+```
+
+Migration 會建立 `noc` schema、`noc.schema_migrations` 與基礎 metadata。密碼只放在未追蹤的 `.env`，不可提交 Git。

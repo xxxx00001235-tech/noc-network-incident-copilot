@@ -3,3 +3,13 @@ dist/
 .pnpm-store/
 *.tsbuildinfo
 .DS_Store
+.env
+.env.*
+!.env.example
+runtime-data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+.npm-cache/
