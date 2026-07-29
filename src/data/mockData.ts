@@ -33,9 +33,9 @@ export const incidents:Incident[] = [
  {id:'INC-20260725-003',title:'新竹光纖訊號中斷',deviceId:'OLT-HC-001',severity:'Critical',status:'收到告警',affectedDevices:28,affectedUsers:410,cause:'疑似光纖中斷',started:'2026-07-25 08:31',timeline:[]},
 ];
 export const contacts:Contact[] = [
- {id:'c1',priority:1,name:'Kevin Wang',role:'設備管理員',phone:'0900-111-111',teams:'kevin.wang@example.com',status:'可聯絡',deviceId:'SW-TP-NG-001'},
- {id:'c2',priority:2,name:'Amy Chen',role:'區域工程師',phone:'0900-222-222',teams:'amy.chen@example.com',status:'可聯絡',deviceId:'SW-TP-NG-001'},
- {id:'c3',priority:3,name:'David Lin',role:'主管',phone:'0900-333-333',teams:'david.lin@example.com',status:'待命',deviceId:'SW-TP-NG-001'},
+ {id:'c1',priority:1,name:'xxxx00001235',role:'負責設備：台北南港核心路由器',phone:'未設定',teams:'xxxx00001235@gmail.com',status:'模擬負責人',deviceId:'RTR-TP-NG-CORE-001'},
+ {id:'c2',priority:2,name:'jeff',role:'負責設備：台北南港匯聚交換器',phone:'未設定',teams:'jeffwwe8177616@gmail.com',status:'模擬負責人',deviceId:'SW-TP-NG-DIST-001'},
+ {id:'c3',priority:3,name:'稚深',role:'負責設備：台北南港接取設備',phone:'未設定',teams:'xxxx000159874@gmail.com',status:'模擬負責人',deviceId:'OLT-TP-NG-ACCESS-001'},
 ];
 export const topologyNodes:TopologyNode[] = devices.slice(0,6).map((d,i)=>({id:d.id,deviceId:d.id,x:[50,50,50,25,75,25][i],y:[5,23,42,65,65,88][i]}));
 export const topologyLinks:TopologyLink[] = [{id:'l1',source:'internet',target:'RTR-CORE-001'},{id:'l2',source:'RTR-CORE-001',target:'SW-TP-NG-001'},{id:'l3',source:'SW-TP-NG-001',target:'SW-NG-DIST-01'},{id:'l4',source:'SW-TP-NG-001',target:'SW-NG-DIST-02'},{id:'l5',source:'SW-NG-DIST-01',target:'AP-NG-01'},{id:'l6',source:'RTR-TP-XY-001',target:'SW-TP-NG-001',backup:true}];

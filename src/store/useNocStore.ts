@@ -9,6 +9,7 @@ interface NocState {
   selectedAlarmId:string; theme:Theme; toast:string; regionFilter:string;
   login:(username:string,password:string)=>boolean; logout:()=>void; switchRole:(role:Role)=>void;
   setTheme:(theme:Theme)=>void; selectAlarm:(id:string)=>void; notify:(text:string)=>void; clearToast:()=>void;
+  upsertAlarm:(alarm:Alarm)=>void;
   setRegionFilter:(region:string)=>void; updateIncident:(id:string,status:IncidentStatus,note:string)=>void;
   addTimeline:(id:string,text:string)=>void; addDevice:(device:Device)=>void; updateDevice:(device:Device)=>void; deleteDevice:(id:string)=>void;
   reviewUser:(id:string,status:User['status'])=>void; setUserRole:(id:string,role:Role)=>void; register:(user:User)=>void;
@@ -25,6 +26,7 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
   logout:()=>set({currentUser:null}),
   switchRole:(role)=>{const user=get().users.find(u=>u.role===role&&u.status==='啟用'); if(user)set({currentUser:user});},
   setTheme:(theme)=>set({theme}), selectAlarm:(selectedAlarmId)=>set({selectedAlarmId}),
+  upsertAlarm:(alarm)=>set(s=>({alarms:s.alarms.some(item=>item.id===alarm.id)?s.alarms.map(item=>item.id===alarm.id?alarm:item):[alarm,...s.alarms]})),
   notify:(toast)=>set({toast}), clearToast:()=>set({toast:''}), setRegionFilter:(regionFilter)=>set({regionFilter}),
   updateIncident:(id,status,note)=>set(s=>({incidents:s.incidents.map(i=>i.id===id?{...i,status,timeline:[...i.timeline,{id:crypto.randomUUID(),time:now(),actor:s.currentUser?.name??'系統',text:note||`狀態更新為「${status}」`,from:i.status,to:status}]}:i)})),
   addTimeline:(id,text)=>set(s=>({incidents:s.incidents.map(i=>i.id===id?{...i,timeline:[...i.timeline,{id:crypto.randomUUID(),time:now(),actor:s.currentUser?.name??'系統',text}]}:i)})),
