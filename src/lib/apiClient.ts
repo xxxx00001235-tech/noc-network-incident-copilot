@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 
 const configuredBaseUrl = import.meta.env.VITE_FASTAPI_BASE_URL?.trim();
-const fastApiBaseUrl = (configuredBaseUrl || 'http://127.0.0.1:8000').replace(/\/+$/, '');
+const fastApiBaseUrl = (configuredBaseUrl || '/fastapi').replace(/\/+$/, '');
 
 type RequestOptions = RequestInit & {
   timeoutMs?: number;
@@ -20,9 +20,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
-  if (signal) {
-    signal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
+  const abortRequest = () => controller.abort();
+  signal?.addEventListener('abort', abortRequest, { once: true });
 
   try {
     const response = await fetch(`${fastApiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`, {
@@ -55,6 +54,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw new ApiError('無法連接 FastAPI，請確認虛擬機、IP 位址與 CORS 設定');
   } finally {
     window.clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortRequest);
   }
 }
 

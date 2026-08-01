@@ -13,6 +13,17 @@
 .alarm-item span{min-width:0}
 .alarm-item span b,.alarm-item strong,.alarm-item small{overflow-wrap:anywhere}
 .alarm-item>.badge{align-self:center;justify-self:end}
+.api-state{display:flex;align-items:center;gap:10px;margin:0 0 16px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--muted)}
+.api-state>svg{width:18px;height:18px;flex:0 0 auto}
+.api-state span{display:grid;gap:2px}
+.api-state span b{color:var(--text);font-size:13px}
+.api-state span small{font-size:12px}
+.api-state .btn{margin-left:auto}
+.api-state.success{border-color:#39d98a55}
+.api-state.success>svg{color:#39d98a}
+.api-state.error{border-color:#ff697955}
+.api-state.error>svg{color:#ff6979}
+.api-state.loading>svg{color:var(--accent)}
 .monitor-empty{display:flex;align-items:center;gap:14px;padding:8px 2px}
 .monitor-empty>svg{width:34px;height:34px;color:var(--accent)}
 .monitor-empty b,.monitor-empty small{display:block}

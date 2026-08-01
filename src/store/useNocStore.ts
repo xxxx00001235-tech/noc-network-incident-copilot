@@ -9,7 +9,7 @@ interface NocState {
   selectedAlarmId:string; theme:Theme; toast:string; regionFilter:string;
   login:(username:string,password:string)=>boolean; logout:()=>void; switchRole:(role:Role)=>void;
   setTheme:(theme:Theme)=>void; selectAlarm:(id:string)=>void; notify:(text:string)=>void; clearToast:()=>void;
-  upsertAlarm:(alarm:Alarm)=>void;
+  syncAlarm:(alarm:Alarm)=>void;
   setRegionFilter:(region:string)=>void; updateIncident:(id:string,status:IncidentStatus,note:string)=>void;
   addTimeline:(id:string,text:string)=>void; addDevice:(device:Device)=>void; updateDevice:(device:Device)=>void; deleteDevice:(id:string)=>void;
   reviewUser:(id:string,status:User['status'])=>void; setUserRole:(id:string,role:Role)=>void; register:(user:User)=>void;
@@ -26,7 +26,47 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
   logout:()=>set({currentUser:null}),
   switchRole:(role)=>{const user=get().users.find(u=>u.role===role&&u.status==='啟用'); if(user)set({currentUser:user});},
   setTheme:(theme)=>set({theme}), selectAlarm:(selectedAlarmId)=>set({selectedAlarmId}),
-  upsertAlarm:(alarm)=>set(s=>({alarms:s.alarms.some(item=>item.id===alarm.id)?s.alarms.map(item=>item.id===alarm.id?alarm:item):[alarm,...s.alarms]})),
+  syncAlarm:(alarm)=>set(s=>{
+    const existingIncident=s.incidents.find(item=>item.id===alarm.incidentId);
+    const incident:Incident=existingIncident?{
+      ...existingIncident,
+      title:`${alarm.deviceName}：${alarm.content}`,
+      severity:alarm.severity,
+    }:{
+      id:alarm.incidentId,
+      title:`${alarm.deviceName}：${alarm.content}`,
+      deviceId:alarm.deviceId,
+      severity:alarm.severity,
+      status:'收到告警',
+      affectedDevices:1,
+      affectedUsers:0,
+      cause:'等待 FastAPI AI 分析',
+      started:alarm.time,
+      timeline:[{id:crypto.randomUUID(),time:now(),actor:'FastAPI',text:`同步告警：${alarm.content}`}],
+    };
+    const existingDevice=s.devices.find(item=>item.id===alarm.deviceId);
+    const device:Device={
+      id:alarm.deviceId,
+      name:alarm.deviceName,
+      ip:alarm.ip,
+      type:alarm.deviceType,
+      region:alarm.region,
+      site:alarm.site,
+      status:alarm.status==='已恢復'?'normal':'incident',
+      alarms:alarm.status==='已恢復'?0:1,
+      downstream:existingDevice?.downstream??[],
+      upstream:existingDevice?.upstream,
+      backup:existingDevice?.backup,
+      maintenance:existingDevice?.maintenance,
+      cpu:existingDevice?.cpu,
+    };
+    return{
+      alarms:s.alarms.some(item=>item.id===alarm.id)?s.alarms.map(item=>item.id===alarm.id?alarm:item):[alarm,...s.alarms],
+      incidents:existingIncident?s.incidents.map(item=>item.id===incident.id?incident:item):[incident,...s.incidents],
+      devices:s.devices.some(item=>item.id===device.id)?s.devices.map(item=>item.id===device.id?device:item):[device,...s.devices],
+      selectedAlarmId:alarm.id,
+    };
+  }),
   notify:(toast)=>set({toast}), clearToast:()=>set({toast:''}), setRegionFilter:(regionFilter)=>set({regionFilter}),
   updateIncident:(id,status,note)=>set(s=>({incidents:s.incidents.map(i=>i.id===id?{...i,status,timeline:[...i.timeline,{id:crypto.randomUUID(),time:now(),actor:s.currentUser?.name??'系統',text:note||`狀態更新為「${status}」`,from:i.status,to:status}]}:i)})),
   addTimeline:(id,text)=>set(s=>({incidents:s.incidents.map(i=>i.id===id?{...i,timeline:[...i.timeline,{id:crypto.randomUUID(),time:now(),actor:s.currentUser?.name??'系統',text}]}:i)})),
@@ -45,4 +85,10 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
   },
   recoverLab:()=>set(s=>({devices:s.devices.map(d=>d.id==='SW-LAB-001'?{...d,status:'normal',alarms:0}:d),alarms:s.alarms.map(a=>a.deviceId==='SW-LAB-001'?{...a,status:'已恢復'}:a),toast:'Lab 設備已模擬恢復'})),
   resetLab:()=>set(s=>({devices:s.devices.filter(d=>d.id!=='SW-LAB-001'),alarms:s.alarms.filter(a=>a.deviceId!=='SW-LAB-001'),incidents:s.incidents.filter(i=>i.deviceId!=='SW-LAB-001'),selectedAlarmId:seedAlarms[0].id,toast:'Lab 已重設'})),
-}),{name:'noc-copilot-state',partialize:s=>({currentUser:s.currentUser,users:s.users,alarms:s.alarms,devices:s.devices,incidents:s.incidents,selectedAlarmId:s.selectedAlarmId,theme:s.theme})}));
+}),{
+  name:'noc-copilot-state',
+  version:2,
+  partialize:s=>({currentUser:s.currentUser,users:s.users,alarms:s.alarms,devices:s.devices,incidents:s.incidents,selectedAlarmId:s.selectedAlarmId,theme:s.theme}),
+  migrate:persisted=>persisted as NocState,
+  merge:(persisted,current)=>({...current,...persisted as Partial<NocState>,toast:'',regionFilter:''}),
+}));

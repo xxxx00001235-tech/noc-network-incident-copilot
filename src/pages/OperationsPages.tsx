@@ -12,8 +12,8 @@ import { fetchReport, type ReportResponse } from '../api/report';
 import { ApiError } from '../lib/apiClient';
 
 export function AlarmPage(){
- const alarms=useNocStore(s=>s.alarms),upsertAlarm=useNocStore(s=>s.upsertAlarm),selectedId=useNocStore(s=>s.selectedAlarmId),select=useNocStore(s=>s.selectAlarm),regionFilter=useNocStore(s=>s.regionFilter),setRegion=useNocStore(s=>s.setRegionFilter); const [q,setQ]=useState(''),[sev,setSev]=useState(''),[status,setStatus]=useState(''); const [liveAlarm,setLiveAlarm]=useState<Alarm|null>(null),[loading,setLoading]=useState(true),[apiError,setApiError]=useState('');
- const loadLatest=async()=>{setLoading(true);setApiError('');try{const alarm=await fetchLatestAlarm();setLiveAlarm(alarm);upsertAlarm(alarm)}catch(error){setApiError(error instanceof ApiError?error.message:'無法取得最新告警')}finally{setLoading(false)}};
+ const alarms=useNocStore(s=>s.alarms),syncAlarm=useNocStore(s=>s.syncAlarm),selectedId=useNocStore(s=>s.selectedAlarmId),select=useNocStore(s=>s.selectAlarm),regionFilter=useNocStore(s=>s.regionFilter),setRegion=useNocStore(s=>s.setRegionFilter); const [q,setQ]=useState(''),[sev,setSev]=useState(''),[status,setStatus]=useState(''); const [liveAlarm,setLiveAlarm]=useState<Alarm|null>(null),[loading,setLoading]=useState(true),[apiError,setApiError]=useState('');
+ const loadLatest=async()=>{setLoading(true);setApiError('');try{const alarm=await fetchLatestAlarm();setLiveAlarm(alarm);syncAlarm(alarm)}catch(error){setApiError(error instanceof ApiError?error.message:'無法取得最新告警')}finally{setLoading(false)}};
  useEffect(()=>{void loadLatest()},[]);
  const displayAlarms=liveAlarm?[liveAlarm,...alarms.filter(a=>a.id!==liveAlarm.id)]:alarms;
  const filtered=displayAlarms.filter(a=>(!q||Object.values(a).join(' ').toLowerCase().includes(q.toLowerCase()))&&(!sev||a.severity===sev)&&(!regionFilter||a.region===regionFilter)&&(!status||a.status===status)); const selected=displayAlarms.find(a=>a.id===selectedId)??filtered[0];
