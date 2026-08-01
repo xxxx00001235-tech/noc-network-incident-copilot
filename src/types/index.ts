@@ -1,6 +1,7 @@
 export type Role = 'operator' | 'engineer' | 'admin';
 export type Severity = 'Critical' | 'Major' | 'Minor' | 'Warning' | 'Normal';
 export type DeviceStatus = 'normal' | 'incident' | 'maintenance' | 'unknown';
+export type DemoScenario = 'core-router-failure' | 'olt-access-failure' | 'maintenance-event';
 export type IncidentStatus = '收到告警'|'AI 分析完成'|'查測中'|'等待設備管理員'|'確認原因'|'初報完成'|'持續追蹤'|'設備恢復'|'結報完成'|'事件關閉';
 export interface User { id:string; username:string; password:string; name:string; employeeId:string; email:string; teams:string; phone:string; department:string; role:Role; status:'啟用'|'等待審核'|'拒絕'|'停用' }
 export interface Maintenance { type:string; content:string; start:string; end:string; owner:string; ticket:string; impact:string; note:string }

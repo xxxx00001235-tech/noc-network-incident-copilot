@@ -44,7 +44,7 @@ export function TopologyPage(){
    setSyncState('success');setSyncMessage(`已同步 ${latestAlarm?.deviceName||deviceId}（${deviceId}）拓樸`);
   }catch(error){
    setApiTopology(null);
-   setSelected('SW-TP-NG-001');
+   setSelected(deviceId||'SW-TP-NG-001');
    setSyncState('error');setSyncMessage(`${error instanceof Error?error.message:'拓樸同步失敗'}；目前顯示原有模擬拓樸`);
   }
  },[latestAlarm?.deviceId,latestAlarm?.deviceName]);
@@ -66,7 +66,10 @@ export function TopologyPage(){
  const faultId=topologyRefId(apiTopology?.fault_device);
  const affectedIds=useMemo(()=>new Set(apiTopology?.affected_device_ids||[]),[apiTopology]);
  const shownNodes=useMemo(()=>{
-  if(!apiTopology?.nodes?.length)return topologyNodes;
+  if(!apiTopology?.nodes?.length){
+   if(latestAlarm?.deviceId&&!topologyNodes.some(node=>node.deviceId===latestAlarm.deviceId)&&devices.some(device=>device.id===latestAlarm.deviceId))return[...topologyNodes,{id:`demo-${latestAlarm.deviceId}`,deviceId:latestAlarm.deviceId,x:82,y:88}];
+   return topologyNodes;
+  }
   const columns=Math.min(3,Math.max(1,Math.ceil(Math.sqrt(apiTopology.nodes.length))));
   const rows=Math.ceil(apiTopology.nodes.length/columns);
   return apiTopology.nodes.map((node,index)=>{
@@ -74,7 +77,7 @@ export function TopologyPage(){
    const column=index%columns,row=Math.floor(index/columns);
    return{id,deviceId:id,x:node.x??mock?.x??((column+1)/(columns+1))*100,y:node.y??mock?.y??(rows===1?50:12+(row/(rows-1))*76)};
   }).filter(node=>node.id);
- },[apiTopology]);
+ },[apiTopology,devices,latestAlarm?.deviceId]);
  const shownLinks=useMemo(()=>apiTopology?.links?.length?apiTopology.links.map((link,index)=>({id:link.id||`api-link-${index}`,source:link.source,target:link.target,backup:link.backup})):topologyLinks,[apiTopology]);
  const shownDevices=useMemo(()=>{
   if(!apiTopology?.nodes?.length)return devices;

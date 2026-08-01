@@ -38,14 +38,14 @@ function AlarmDetail({alarm}:{alarm:Alarm}){const device=useNocStore(s=>s.device
 const states:IncidentStatus[]=['收到告警','AI 分析完成','查測中','等待設備管理員','確認原因','初報完成','持續追蹤','設備恢復','結報完成','事件關閉'];
 const fastApiReportDeviceIds=new Set(['RTR-CORE-001','SW-TP-NG-001','OLT-HC-001']);
 export function IncidentsPage(){
- const incidents=useNocStore(s=>s.incidents),alarms=useNocStore(s=>s.alarms),update=useNocStore(s=>s.updateIncident),add=useNocStore(s=>s.addTimeline),notify=useNocStore(s=>s.notify);const[selected,setSelected]=useState(incidents[0]?.id??'');const[note,setNote]=useState('');const i=incidents.find(x=>x.id===selected)??incidents[0];const alarm=alarms.find(a=>a.incidentId===i?.id);
+ const incidents=useNocStore(s=>s.incidents),alarms=useNocStore(s=>s.alarms),activeDemoIncidentId=useNocStore(s=>s.activeDemoIncidentId),update=useNocStore(s=>s.updateIncident),add=useNocStore(s=>s.addTimeline),notify=useNocStore(s=>s.notify);const[selected,setSelected]=useState(incidents[0]?.id??'');const[note,setNote]=useState('');useEffect(()=>{if(activeDemoIncidentId)setSelected(activeDemoIncidentId)},[activeDemoIncidentId]);const i=incidents.find(x=>x.id===selected)??incidents[0];const alarm=alarms.find(a=>a.incidentId===i?.id);
  const notification=(type:'初報'|'續報'|'結報')=>type==='初報'?`【網路障礙初報】\n事件編號：${i.id}\n發生時間：${i.started}\n障礙設備：${i.deviceId}\n告警內容：${alarm?.content}\n影響範圍：${i.affectedDevices} 台下游設備\n初步判斷：${i.cause}\n處理進度：${i.status}\n下次更新：30 分鐘內`:type==='續報'?`【網路障礙續報】\n事件編號：${i.id}\n目前原因：${i.cause}\n處理進度：${i.status}\n目前影響：${i.affectedDevices} 台設備\n預計恢復：評估中`:`【網路障礙結報】\n事件編號：${i.id}\n障礙原因：${i.cause}\n處理方式：更換 SFP 光模組\n影響設備：${i.affectedDevices} 台\n目前狀態：服務已恢復，告警已清除`;
  const [report,setReport]=useState<'初報'|'續報'|'結報'>('初報'); const [custom,setCustom]=useState('');
  const[apiReport,setApiReport]=useState<ReportResponse|null>(null),[reportState,setReportState]=useState<'idle'|'loading'|'success'|'error'>('idle'),[reportError,setReportError]=useState(''),[reportRefresh,setReportRefresh]=useState(0);
  const reportDeviceId=alarm?.deviceId||i?.deviceId||'';
  useEffect(()=>{
   let active=true;
-  if(!reportDeviceId){setApiReport(null);setReportState('idle');return()=>{active=false}}
+  if(!reportDeviceId||i?.id==='INC-DEMO-S4-1'){setApiReport(null);setReportState('idle');return()=>{active=false}}
   setApiReport(null);setReportState('loading');setReportError('');
   void(async()=>{
    try{
@@ -59,7 +59,7 @@ export function IncidentsPage(){
    }
   })();
   return()=>{active=false};
- },[reportDeviceId,reportRefresh]);
+ },[reportDeviceId,reportRefresh,i?.id]);
  if(!i)return <div className="page"><Empty text="目前沒有事件"/></div>;
  const generatedReport=report==='初報'&&apiReport?.report?apiReport.report:notification(report);
  return <div className="page"><div className="page-title"><div><span className="eyebrow">INCIDENT LIFECYCLE</span><h1>事件中心</h1><p>從告警接收到結報關閉，全程留下紀錄。</p></div></div><div className="incident-tabs">{incidents.map(x=><button key={x.id} className={x.id===i.id?'active':''} onClick={()=>setSelected(x.id)}><Badge tone={severityTone(x.severity)}>{x.severity}</Badge><b>{x.title}</b><small>{x.id}</small></button>)}</div>
