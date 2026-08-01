@@ -120,6 +120,16 @@ src/
 - 增加拖曳式拓樸編輯器與更多圖表
 - 在取得正式資安與權限設計後，再建立可替換的後端介面
 - 加入 i18n、多租戶與更細緻的 RBAC 權限
+
+## FastAPI WebSocket 告警
+
+FastAPI 服務提供 `WS /ws/alarms`；收到 `POST /api/alarms` 後會立即推送告警，
+Dashboard、告警中心與拓樸共用同一份即時狀態。Critical／Major 新告警會播放提示音。
+
+```powershell
+python -m pip install -r fastapi_app/requirements.txt
+python -m uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000
+```
 ## 本機唯讀監控（期末版本第一階段）
 
 公開網站預設維持 `demo` 模式，不會讀取使用者的電腦。若要在目前這台

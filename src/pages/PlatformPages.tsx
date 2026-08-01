@@ -1,7 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Bell, CheckCircle2, Clock, Edit3, Expand, FlaskConical, MapPin, Plus, Radio, RotateCcw, Save, Server, ShieldCheck, Trash2, Wrench, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { fetchLatestAlarm } from '../api/alarms';
 import { fetchMaintenance, type MaintenanceResponse } from '../api/maintenance';
 import { fetchTopology, type TopologyApiNode, type TopologyDeviceReference, type TopologyResponse } from '../api/topology';
 import { regions, topologyLinks, topologyNodes } from '../data/mockData';
@@ -24,6 +23,7 @@ function topologyDeviceStatus(status?:string):Device['status']{
 }
 export function TopologyPage(){
  const devices=useNocStore(s=>s.devices);
+ const latestAlarm=useNocStore(s=>s.alarms[0]);
  const[selected,setSelected]=useState('SW-TP-NG-001');
  const[apiTopology,setApiTopology]=useState<TopologyResponse|null>(null);
  const[syncState,setSyncState]=useState<'loading'|'success'|'error'>('loading');
@@ -32,22 +32,22 @@ export function TopologyPage(){
  const[maintenanceState,setMaintenanceState]=useState<'loading'|'success'|'error'>('loading');
  const[maintenanceMessage,setMaintenanceMessage]=useState('正在查詢設備維護狀態…');
  const[maintenanceRefresh,setMaintenanceRefresh]=useState(0);
- const syncTopology=useCallback(async()=>{
+ const syncTopology=useCallback(async(deviceId=latestAlarm?.deviceId)=>{
   setSyncState('loading');setSyncMessage('正在取得最新告警與拓樸資料…');
   try{
-   const alarm=await fetchLatestAlarm();
-   const topology=await fetchTopology(alarm.deviceId);
+   if(!deviceId)throw new Error('目前沒有可同步的告警');
+   const topology=await fetchTopology(deviceId);
    setApiTopology(topology);
-   const faultId=topologyRefId(topology.fault_device)||alarm.deviceId;
+   const faultId=topologyRefId(topology.fault_device)||deviceId;
    setSelected(faultId);
-   setSyncState('success');setSyncMessage(`已同步 ${alarm.deviceName}（${alarm.deviceId}）拓樸`);
+   setSyncState('success');setSyncMessage(`已同步 ${latestAlarm?.deviceName||deviceId}（${deviceId}）拓樸`);
   }catch(error){
    setApiTopology(null);
    setSelected('SW-TP-NG-001');
    setSyncState('error');setSyncMessage(`${error instanceof Error?error.message:'拓樸同步失敗'}；目前顯示原有模擬拓樸`);
   }
- },[]);
- useEffect(()=>{void syncTopology()},[syncTopology]);
+ },[latestAlarm?.deviceId,latestAlarm?.deviceName]);
+ useEffect(()=>{void syncTopology(latestAlarm?.deviceId)},[latestAlarm?.deviceId,syncTopology]);
  useEffect(()=>{
   let active=true;
   setMaintenanceData(null);setMaintenanceState('loading');setMaintenanceMessage('正在查詢設備維護狀態…');

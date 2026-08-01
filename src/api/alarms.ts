@@ -1,7 +1,7 @@
 import type { Alarm, Severity } from '../types';
 import { apiRequest } from '../lib/apiClient';
 
-interface FastApiAlarm {
+export interface FastApiAlarm {
   time?: string;
   device_id: string;
   device_name: string;
@@ -15,7 +15,7 @@ interface FastApiAlarm {
   severity?: string;
 }
 
-interface LatestAlarmResponse {
+export interface LatestAlarmResponse {
   status: string;
   source_file?: string;
   alarm: FastApiAlarm;
@@ -41,6 +41,10 @@ function locationParts(location = '') {
 
 export async function fetchLatestAlarm(): Promise<Alarm> {
   const response = await apiRequest<LatestAlarmResponse>('/api/alarms/latest');
+  return normalizeFastApiAlarm(response);
+}
+
+export function normalizeFastApiAlarm(response: LatestAlarmResponse): Alarm {
   const source = response.alarm;
   const location = locationParts(source.location);
   const id = response.source_file
