@@ -7,10 +7,11 @@ import type { AlarmSocketState } from '../api/alarmSocket';
 type Theme = 'dark'|'light'|'ai';
 interface NocState {
   currentUser:User|null; users:User[]; alarms:Alarm[]; devices:Device[]; incidents:Incident[];
-  selectedAlarmId:string; theme:Theme; toast:string; regionFilter:string; realtimeState:AlarmSocketState;
+  selectedAlarmId:string; theme:Theme; toast:string; regionFilter:string; realtimeState:AlarmSocketState; unreadAlarmCount:number;
   login:(username:string,password:string)=>boolean; logout:()=>void; switchRole:(role:Role)=>void;
   setTheme:(theme:Theme)=>void; selectAlarm:(id:string)=>void; notify:(text:string)=>void; clearToast:()=>void;
   syncAlarm:(alarm:Alarm)=>void;
+  receiveRealtimeAlarm:(alarm:Alarm)=>void; acknowledgeAlarms:()=>void;
   setRealtimeState:(state:AlarmSocketState)=>void;
   setRegionFilter:(region:string)=>void; updateIncident:(id:string,status:IncidentStatus,note:string)=>void;
   addTimeline:(id:string,text:string)=>void; addDevice:(device:Device)=>void; updateDevice:(device:Device)=>void; deleteDevice:(id:string)=>void;
@@ -20,7 +21,7 @@ interface NocState {
 const now = () => new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
 export const useNocStore = create<NocState>()(persist((set,get)=>({
   currentUser:null, users:seedUsers, alarms:seedAlarms, devices:seedDevices, incidents:seedIncidents,
-  selectedAlarmId:seedAlarms[0].id, theme:'dark', toast:'', regionFilter:'', realtimeState:'connecting',
+  selectedAlarmId:seedAlarms[0].id, theme:'dark', toast:'', regionFilter:'', realtimeState:'connecting', unreadAlarmCount:0,
   login:(username,password)=>{
     const user=get().users.find(u=>u.username===username&&u.password===password&&u.status==='啟用');
     if(user) set({currentUser:user}); return Boolean(user);
@@ -70,6 +71,11 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
       selectedAlarmId:alarm.id,
     };
   }),
+  receiveRealtimeAlarm:(alarm)=>{
+    get().syncAlarm(alarm);
+    set(s=>({unreadAlarmCount:s.unreadAlarmCount+1,toast:`新告警｜${alarm.severity}｜${alarm.deviceName}：${alarm.content}`}));
+  },
+  acknowledgeAlarms:()=>set({unreadAlarmCount:0}),
   notify:(toast)=>set({toast}), clearToast:()=>set({toast:''}), setRegionFilter:(regionFilter)=>set({regionFilter}),
   updateIncident:(id,status,note)=>set(s=>({incidents:s.incidents.map(i=>i.id===id?{...i,status,timeline:[...i.timeline,{id:crypto.randomUUID(),time:now(),actor:s.currentUser?.name??'系統',text:note||`狀態更新為「${status}」`,from:i.status,to:status}]}:i)})),
   addTimeline:(id,text)=>set(s=>({incidents:s.incidents.map(i=>i.id===id?{...i,timeline:[...i.timeline,{id:crypto.randomUUID(),time:now(),actor:s.currentUser?.name??'系統',text}]}:i)})),
@@ -93,5 +99,5 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
   version:2,
   partialize:s=>({currentUser:s.currentUser,users:s.users,alarms:s.alarms,devices:s.devices,incidents:s.incidents,selectedAlarmId:s.selectedAlarmId,theme:s.theme}),
   migrate:persisted=>persisted as NocState,
-  merge:(persisted,current)=>({...current,...persisted as Partial<NocState>,toast:'',regionFilter:'',realtimeState:'connecting'}),
+  merge:(persisted,current)=>({...current,...persisted as Partial<NocState>,toast:'',regionFilter:'',realtimeState:'connecting',unreadAlarmCount:0}),
 }));

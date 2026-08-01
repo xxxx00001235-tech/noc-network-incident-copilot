@@ -4,11 +4,15 @@ import { fetchLatestAlarm } from '../api/alarms';
 import { useNocStore } from '../store/useNocStore';
 import type { Alarm } from '../types';
 
+let audioContext: AudioContext | null = null;
+
 function playAlarmTone(severity: Alarm['severity']) {
   if (!['Critical', 'Major'].includes(severity)) return;
   const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioContextClass) return;
-  const context = new AudioContextClass();
+  const context = audioContext ?? new AudioContextClass();
+  audioContext = context;
+  if (context.state === 'suspended') void context.resume();
   const oscillator = context.createOscillator();
   const gain = context.createGain();
   oscillator.type = 'sine';
@@ -19,11 +23,11 @@ function playAlarmTone(severity: Alarm['severity']) {
   oscillator.connect(gain).connect(context.destination);
   oscillator.start();
   oscillator.stop(context.currentTime + 0.5);
-  oscillator.onended = () => void context.close();
 }
 
 export function AlarmRealtime() {
   const syncAlarm = useNocStore(state => state.syncAlarm);
+  const receiveRealtimeAlarm = useNocStore(state => state.receiveRealtimeAlarm);
   const setRealtimeState = useNocStore(state => state.setRealtimeState);
   const seen = useRef(new Set<string>());
 
@@ -32,10 +36,26 @@ export function AlarmRealtime() {
     onAlarm: alarm => {
       const isNew = !seen.current.has(alarm.id);
       seen.current.add(alarm.id);
-      syncAlarm(alarm);
-      if (isNew) playAlarmTone(alarm.severity);
+      if (isNew) {
+        receiveRealtimeAlarm(alarm);
+        playAlarmTone(alarm.severity);
+      } else {
+        syncAlarm(alarm);
+      }
     },
-  }), [setRealtimeState, syncAlarm]);
+  }), [receiveRealtimeAlarm, setRealtimeState, syncAlarm]);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (audioContext?.state === 'suspended') void audioContext.resume();
+    };
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio);
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, []);
 
   useEffect(() => {
     void fetchLatestAlarm().then(alarm => {
