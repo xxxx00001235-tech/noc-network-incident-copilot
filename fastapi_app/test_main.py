@@ -10,6 +10,7 @@ READ_HEADERS = {"X-NOC-Role": "operator"}
 def test_operational_apis() -> None:
     device_id = "SW-TP-NG-001"
     routes = (
+        "/api/inventory",
         "/api/alarms/latest",
         f"/api/topology/{device_id}",
         f"/api/report/{device_id}",
@@ -28,6 +29,21 @@ def test_topology_response_uses_json_serializable_device_objects() -> None:
     assert body["fault_device"]["device_id"] == "SW-TP-NG-001"
     assert body["nodes"]
     assert body["links"]
+    ids = {node["device_id"] for node in body["nodes"]}
+    assert "RTR-TP-NG-BACKUP-001" in ids
+    assert "RTR-TP-XY-001" not in ids
+    assert all(link["source"] in ids and link["target"] in ids for link in body["links"])
+
+
+def test_inventory_is_shared_by_operational_apis() -> None:
+    inventory = client.get("/api/inventory", headers=READ_HEADERS).json()
+    ids = {device["id"] for device in inventory["devices"]}
+    assert len(ids) == len(inventory["devices"])
+    for device_id in ids:
+        topology = client.get(f"/api/topology/{device_id}", headers=READ_HEADERS).json()
+        assert topology["fault_device"]["device_id"] == device_id
+        assert client.get(f"/api/analyze/{device_id}", headers=READ_HEADERS).json()["device_id"] == device_id
+        assert client.get(f"/api/report/{device_id}", headers=READ_HEADERS).json()["device_id"] == device_id
 
 
 def test_alarm_websocket_receives_published_alarm() -> None:

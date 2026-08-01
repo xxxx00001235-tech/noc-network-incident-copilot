@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import json
 import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -56,22 +58,18 @@ app.add_middleware(
 clients: set[WebSocket] = set()
 latest_alarm: dict[str, Any] | None = None
 
+INVENTORY_PATH = Path(__file__).resolve().parents[1] / "inventory" / "device-inventory.json"
+INVENTORY = json.loads(INVENTORY_PATH.read_text(encoding="utf-8"))
 DEVICES: dict[str, dict[str, Any]] = {
-    "RTR-CORE-001": {"device_name": "RTR-CORE-001", "ip": "10.0.0.1", "device_type": "Router", "status": "normal", "region": "台北", "site": "南港"},
-    "SW-TP-NG-001": {"device_name": "SW-TP-NG-001", "ip": "10.10.1.1", "device_type": "Core Switch", "status": "incident", "region": "台北", "site": "南港"},
-    "SW-NG-DIST-01": {"device_name": "SW-NG-DIST-01", "ip": "10.10.2.1", "device_type": "Distribution Switch", "status": "normal", "region": "台北", "site": "南港"},
-    "SW-NG-DIST-02": {"device_name": "SW-NG-DIST-02", "ip": "10.10.2.2", "device_type": "Distribution Switch", "status": "normal", "region": "台北", "site": "南港"},
-    "AP-NG-01": {"device_name": "AP-NG-01", "ip": "10.10.3.1", "device_type": "Access Point", "status": "normal", "region": "台北", "site": "南港"},
-    "RTR-TP-XY-001": {"device_name": "RTR-TP-XY-001", "ip": "10.20.1.1", "device_type": "Router", "status": "maintenance", "region": "台北", "site": "信義"},
+    item["id"]: {
+        "device_name": item["name"], "ip": item["ip"],
+        "device_type": item["type"], "status": item["status"],
+        "region": item["region"], "site": item["site"],
+        **({"maintenance": item["maintenance"]} if "maintenance" in item else {}),
+    }
+    for item in INVENTORY["devices"]
 }
-
-TOPOLOGY_LINKS = [
-    {"id": "l1", "source": "RTR-CORE-001", "target": "SW-TP-NG-001"},
-    {"id": "l2", "source": "SW-TP-NG-001", "target": "SW-NG-DIST-01"},
-    {"id": "l3", "source": "SW-TP-NG-001", "target": "SW-NG-DIST-02"},
-    {"id": "l4", "source": "SW-NG-DIST-01", "target": "AP-NG-01"},
-    {"id": "l5", "source": "RTR-TP-XY-001", "target": "SW-TP-NG-001", "backup": True},
-]
+TOPOLOGY_LINKS = INVENTORY["links"]
 
 
 def device_node(device_id: str) -> dict[str, Any]:
@@ -90,6 +88,11 @@ def alarm_for(device_id: str) -> dict[str, Any]:
         "status": "DOWN" if details.get("status") == "incident" else "UP",
         "severity": "Critical" if details.get("status") == "incident" else "Normal",
     }
+
+
+@app.get("/api/inventory")
+async def get_inventory() -> dict[str, Any]:
+    return {"status": "ok", **INVENTORY}
 
 
 class AlarmInput(BaseModel):
@@ -120,7 +123,11 @@ async def broadcast(message: dict[str, Any]) -> None:
 @app.post("/api/alarms", status_code=202)
 async def publish_alarm(alarm: AlarmInput) -> dict[str, Any]:
     global latest_alarm
+    if alarm.device_id not in DEVICES:
+        return JSONResponse(status_code=422, content={"detail": "Unknown device_id"})
     data = alarm.model_dump()
+    device = DEVICES[alarm.device_id]
+    data.update({"device_name": device["device_name"], "ip": device["ip"], "device_type": device["device_type"]})
     data["time"] = data["time"] or datetime.now(timezone.utc).isoformat()
     latest_alarm = {"status": "ok", "alarm": data}
     await broadcast({"type": "alarm", "data": latest_alarm})
@@ -134,8 +141,8 @@ async def get_latest_alarm() -> dict[str, Any]:
     return {
         "status": "ok",
         "alarm": {
-            "device_id": "NOC-DEMO-001",
-            "device_name": "NOC-DEMO-001",
+            "device_id": "SW-TP-NG-001",
+            "device_name": "SW-TP-NG-001",
             "alarm": "WebSocket service ready",
             "status": "UP",
             "severity": "Normal",
@@ -164,15 +171,16 @@ async def get_topology(device_id: str) -> dict[str, Any]:
 
 @app.get("/api/maintenance/{device_id}")
 async def get_maintenance(device_id: str) -> dict[str, Any]:
-    under_maintenance = device_id == "RTR-TP-XY-001"
+    device_maintenance = DEVICES.get(device_id, {}).get("maintenance")
+    under_maintenance = device_maintenance is not None
     maintenance = None
-    if under_maintenance:
+    if device_maintenance:
         maintenance = {
             "status": "scheduled",
             "start_time": "2026-08-01T01:00:00+08:00",
             "end_time": "2026-08-01T03:00:00+08:00",
-            "description": "例行韌體安全更新",
-            "owner": {"username": "Amy Chen", "email": "amy.chen@example.com"},
+            "description": device_maintenance["content"],
+            "owner": {"username": device_maintenance["owner"], "email": "amy.chen@example.com"},
         }
     return {"status": "ok", "device_id": device_id, "under_maintenance": under_maintenance, "maintenance": maintenance}
 

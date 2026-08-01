@@ -3,7 +3,8 @@ import { AlertTriangle, Bell, CheckCircle2, Clock, Edit3, Expand, FlaskConical, 
 import { useNavigate } from 'react-router-dom';
 import { fetchMaintenance, type MaintenanceResponse } from '../api/maintenance';
 import { fetchTopology, type TopologyApiNode, type TopologyDeviceReference, type TopologyResponse } from '../api/topology';
-import { regions, topologyLinks, topologyNodes } from '../data/mockData';
+import { regions } from '../data/mockData';
+import { topologyLinks, topologyNodes } from '../data/inventory';
 import { useNocStore } from '../store/useNocStore';
 import type { Device, Role } from '../types';
 import { Badge, Card, Empty, Status } from '../components/common/UI';

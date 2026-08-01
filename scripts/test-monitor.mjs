@@ -12,10 +12,11 @@ try {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Missing test address");
   const baseUrl = `http://${host}:${address.port}`;
+  const readOptions = { headers: { "X-NOC-Role": "operator" } };
   const healthResponse = await fetch(`${baseUrl}/api/health`);
-  const metricsResponse = await fetch(`${baseUrl}/api/metrics/current`);
-  const historyResponse = await fetch(`${baseUrl}/api/metrics/history?limit=10`);
-  const alertsResponse = await fetch(`${baseUrl}/api/alerts?limit=10`);
+  const metricsResponse = await fetch(`${baseUrl}/api/metrics/current`, readOptions);
+  const historyResponse = await fetch(`${baseUrl}/api/metrics/history?limit=10`, readOptions);
+  const alertsResponse = await fetch(`${baseUrl}/api/alerts?limit=10`, readOptions);
   const health = await healthResponse.json();
   const metrics = await metricsResponse.json();
   const history = await historyResponse.json();

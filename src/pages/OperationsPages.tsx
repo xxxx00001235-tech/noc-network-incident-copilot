@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Bell, Check, Clipboard, Copy, ExternalLink, Filter, GitBranch, MessageSquarePlus, Phone, Plus, RefreshCw, Search, Send, ShieldAlert, Trash2, UserCheck, WifiOff, X } from 'lucide-react';
-import { contacts, topologyLinks, topologyNodes } from '../data/mockData';
+import { contacts } from '../data/mockData';
+import { topologyLinks, topologyNodes } from '../data/inventory';
 import { useNocStore } from '../store/useNocStore';
 import type { Alarm, IncidentStatus } from '../types';
 import { Badge, Card, Empty, severityTone, Status } from '../components/common/UI';
@@ -35,7 +36,7 @@ function AlarmDiagnosis({alarm}:{alarm?:Alarm}){
 function AlarmDetail({alarm}:{alarm:Alarm}){const device=useNocStore(s=>s.devices.find(d=>d.id===alarm.deviceId));return <Card title="告警詳細資料"><div className="detail-head"><Badge tone={severityTone(alarm.severity)}>{alarm.severity}</Badge><Status status={device?.status??'unknown'}/></div><h3>{alarm.content}</h3><dl className="detail-grid"><dt>設備</dt><dd>{alarm.deviceName}</dd><dt>IP 位址</dt><dd>{alarm.ip}</dd><dt>類型</dt><dd>{alarm.deviceType}</dd><dt>區域／局名</dt><dd>{alarm.region}／{alarm.site}</dd><dt>來源</dt><dd>{alarm.source}</dd><dt>負責人</dt><dd>{alarm.owner}</dd></dl>{device?.maintenance&&<div className="maintenance-note"><b>{device.maintenance.type}</b><br/>{device.maintenance.content}<br/>{device.maintenance.start}–{device.maintenance.end} · {device.maintenance.ticket}<br/>{device.maintenance.note}</div>}</Card>}
 
 const states:IncidentStatus[]=['收到告警','AI 分析完成','查測中','等待設備管理員','確認原因','初報完成','持續追蹤','設備恢復','結報完成','事件關閉'];
-const fastApiReportDeviceIds=new Set(['RTR-TP-NG-CORE-001','SW-TP-NG-DIST-001','OLT-TP-NG-ACCESS-001']);
+const fastApiReportDeviceIds=new Set(['RTR-CORE-001','SW-TP-NG-001','OLT-HC-001']);
 export function IncidentsPage(){
  const incidents=useNocStore(s=>s.incidents),alarms=useNocStore(s=>s.alarms),update=useNocStore(s=>s.updateIncident),add=useNocStore(s=>s.addTimeline),notify=useNocStore(s=>s.notify);const[selected,setSelected]=useState(incidents[0]?.id??'');const[note,setNote]=useState('');const i=incidents.find(x=>x.id===selected)??incidents[0];const alarm=alarms.find(a=>a.incidentId===i?.id);
  const notification=(type:'初報'|'續報'|'結報')=>type==='初報'?`【網路障礙初報】\n事件編號：${i.id}\n發生時間：${i.started}\n障礙設備：${i.deviceId}\n告警內容：${alarm?.content}\n影響範圍：${i.affectedDevices} 台下游設備\n初步判斷：${i.cause}\n處理進度：${i.status}\n下次更新：30 分鐘內`:type==='續報'?`【網路障礙續報】\n事件編號：${i.id}\n目前原因：${i.cause}\n處理進度：${i.status}\n目前影響：${i.affectedDevices} 台設備\n預計恢復：評估中`:`【網路障礙結報】\n事件編號：${i.id}\n障礙原因：${i.cause}\n處理方式：更換 SFP 光模組\n影響設備：${i.affectedDevices} 台\n目前狀態：服務已恢復，告警已清除`;

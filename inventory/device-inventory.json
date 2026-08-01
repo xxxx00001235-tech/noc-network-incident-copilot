@@ -1,0 +1,12 @@
+{"version":1,"devices":[
+{"id":"internet","name":"Internet","ip":"203.0.113.1","type":"Internet","region":"全區","site":"外部","status":"normal","alarms":0},
+{"id":"RTR-CORE-001","name":"RTR-CORE-001","ip":"192.0.2.1","type":"Core Router","region":"台北","site":"核心機房","status":"normal","alarms":0},
+{"id":"SW-TP-NG-001","name":"SW-TP-NG-001","ip":"10.10.1.1","type":"Core Switch","region":"台北","site":"南港","status":"incident","alarms":2},
+{"id":"SW-NG-DIST-01","name":"SW-NG-DIST-01","ip":"10.10.2.1","type":"Distribution Switch","region":"台北","site":"南港","status":"unknown","alarms":1},
+{"id":"SW-NG-DIST-02","name":"SW-NG-DIST-02","ip":"10.10.2.2","type":"Distribution Switch","region":"台北","site":"南港","status":"unknown","alarms":1},
+{"id":"AP-NG-01","name":"AP-NG-01","ip":"10.10.3.10","type":"Access Switch","region":"台北","site":"南港","status":"unknown","alarms":0},
+{"id":"RTR-TP-NG-BACKUP-001","name":"RTR-TP-NG-BACKUP-001","ip":"10.20.1.1","type":"Router","region":"台北","site":"信義","status":"maintenance","alarms":0,"maintenance":{"type":"韌體升級","content":"例行韌體安全更新","start":"01:00","end":"03:00","owner":"Amy Chen","ticket":"CHG-20260725-008","impact":"信義備援路徑","note":"作業期間由主路徑承載"}},
+{"id":"SW-TY-001","name":"SW-TY-001","ip":"10.30.1.1","type":"Distribution Switch","region":"桃園","site":"桃園","status":"incident","alarms":1,"cpu":94},
+{"id":"OLT-HC-001","name":"OLT-HC-001","ip":"10.40.1.1","type":"Optical Device","region":"新竹","site":"科學園區","status":"incident","alarms":1}],
+"links":[{"id":"l1","source":"internet","target":"RTR-CORE-001"},{"id":"l2","source":"RTR-CORE-001","target":"SW-TP-NG-001"},{"id":"l3","source":"SW-TP-NG-001","target":"SW-NG-DIST-01"},{"id":"l4","source":"SW-TP-NG-001","target":"SW-NG-DIST-02"},{"id":"l5","source":"SW-NG-DIST-01","target":"AP-NG-01"},{"id":"l6","source":"RTR-TP-NG-BACKUP-001","target":"SW-TP-NG-001","backup":true}],
+"topology":[{"id":"internet","deviceId":"internet","x":50,"y":5},{"id":"RTR-CORE-001","deviceId":"RTR-CORE-001","x":50,"y":23},{"id":"SW-TP-NG-001","deviceId":"SW-TP-NG-001","x":50,"y":42},{"id":"SW-NG-DIST-01","deviceId":"SW-NG-DIST-01","x":25,"y":65},{"id":"SW-NG-DIST-02","deviceId":"SW-NG-DIST-02","x":75,"y":65},{"id":"AP-NG-01","deviceId":"AP-NG-01","x":25,"y":88},{"id":"RTR-TP-NG-BACKUP-001","deviceId":"RTR-TP-NG-BACKUP-001","x":75,"y":23}]}

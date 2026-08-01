@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { alarms as seedAlarms, devices as seedDevices, incidents as seedIncidents, users as seedUsers } from '../data/mockData';
+import { alarms as seedAlarms, incidents as seedIncidents, users as seedUsers } from '../data/mockData';
+import { canonicalDeviceId, deviceById, devices as seedDevices } from '../data/inventory';
 import type { Alarm, Device, Incident, IncidentStatus, Role, User } from '../types';
 import type { AlarmSocketState } from '../api/alarmSocket';
 
@@ -31,6 +32,9 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
   setTheme:(theme)=>set({theme}), selectAlarm:(selectedAlarmId)=>set({selectedAlarmId}),
   setRealtimeState:(realtimeState)=>set({realtimeState}),
   syncAlarm:(alarm)=>set(s=>{
+    const canonicalId=canonicalDeviceId(alarm.deviceId);
+    const inventoryDevice=deviceById.get(canonicalId);
+    alarm={...alarm,deviceId:canonicalId,deviceName:inventoryDevice?.name??canonicalId,ip:inventoryDevice?.ip??alarm.ip,deviceType:inventoryDevice?.type??alarm.deviceType,region:inventoryDevice?.region??alarm.region,site:inventoryDevice?.site??alarm.site};
     const existingIncident=s.incidents.find(item=>item.id===alarm.incidentId);
     const incident:Incident=existingIncident?{
       ...existingIncident,
@@ -96,8 +100,13 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
   resetLab:()=>set(s=>({devices:s.devices.filter(d=>d.id!=='SW-LAB-001'),alarms:s.alarms.filter(a=>a.deviceId!=='SW-LAB-001'),incidents:s.incidents.filter(i=>i.deviceId!=='SW-LAB-001'),selectedAlarmId:seedAlarms[0].id,toast:'Lab 已重設'})),
 }),{
   name:'noc-copilot-state',
-  version:2,
+  version:3,
   partialize:s=>({currentUser:s.currentUser,users:s.users,alarms:s.alarms,devices:s.devices,incidents:s.incidents,selectedAlarmId:s.selectedAlarmId,theme:s.theme}),
-  migrate:persisted=>persisted as NocState,
-  merge:(persisted,current)=>({...current,...persisted as Partial<NocState>,toast:'',regionFilter:'',realtimeState:'connecting',unreadAlarmCount:0}),
+  migrate:persisted=>{
+    const state=persisted as Partial<NocState>;
+    const alarms=(state.alarms??seedAlarms).map(alarm=>{const id=canonicalDeviceId(alarm.deviceId);const device=deviceById.get(id);return {...alarm,deviceId:id,deviceName:device?.name??id,ip:device?.ip??alarm.ip,deviceType:device?.type??alarm.deviceType,region:device?.region??alarm.region,site:device?.site??alarm.site}});
+    const incidents=(state.incidents??seedIncidents).map(incident=>({...incident,deviceId:canonicalDeviceId(incident.deviceId)}));
+    return {currentUser:state.currentUser??null,users:state.users??seedUsers,devices:seedDevices,alarms,incidents,selectedAlarmId:state.selectedAlarmId??seedAlarms[0].id,theme:state.theme??'dark'};
+  },
+  merge:(persisted,current)=>({...current,...persisted as Partial<NocState>,devices:seedDevices,toast:'',regionFilter:'',realtimeState:'connecting',unreadAlarmCount:0}),
 }));
