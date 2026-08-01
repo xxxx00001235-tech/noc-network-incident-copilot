@@ -9,7 +9,22 @@ export class ApiError extends Error {
 }
 
 const configuredBaseUrl = import.meta.env.VITE_FASTAPI_BASE_URL?.trim();
-const fastApiBaseUrl = (configuredBaseUrl || 'http://192.168.176.130:8000').replace(/\/+$/, '');
+
+if (!configuredBaseUrl) {
+  throw new Error('VITE_FASTAPI_BASE_URL is required.');
+}
+
+const fastApiBaseUrl = configuredBaseUrl.replace(/\/+$/, '');
+
+if (import.meta.env.PROD) {
+  const productionUrl = new URL(fastApiBaseUrl);
+  const privateHostname = productionUrl.hostname === 'localhost'
+    || productionUrl.hostname === '127.0.0.1'
+    || /^192\.168\./.test(productionUrl.hostname);
+  if (productionUrl.protocol !== 'https:' || privateHostname) {
+    throw new Error('VITE_FASTAPI_BASE_URL must be a public HTTPS URL in production.');
+  }
+}
 
 type RequestOptions = RequestInit & {
   timeoutMs?: number;
