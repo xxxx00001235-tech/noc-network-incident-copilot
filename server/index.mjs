@@ -240,6 +240,17 @@ function hasCloudflareAccess(request) {
   return typeof assertion === "string" && assertion.length > 40;
 }
 
+const ROLE_PERMISSIONS = {
+  admin: new Set(["metrics.read"]),
+  operator: new Set(["metrics.read"]),
+  engineer: new Set(["metrics.read"]),
+};
+
+function hasPermission(request, permission) {
+  const role = request.headers["x-noc-role"];
+  return typeof role === "string" && ROLE_PERMISSIONS[role]?.has(permission);
+}
+
 export function createMonitorServer() {
   startSampler();
   return http.createServer(async (request, response) => {
@@ -249,7 +260,7 @@ export function createMonitorServer() {
       response.writeHead(204, {
         ...headers,
         "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, X-NOC-Role",
       });
       response.end();
       return;
@@ -260,6 +271,11 @@ export function createMonitorServer() {
     }
     if (!hasCloudflareAccess(request)) {
       sendJson(response, 401, { error: "Cloudflare Access authentication required" }, headers);
+      return;
+    }
+    const publicPaths = new Set(["/api/health", "/api/ready", "/api/version"]);
+    if (url.pathname.startsWith("/api/") && !publicPaths.has(url.pathname) && !hasPermission(request, "metrics.read")) {
+      sendJson(response, 403, { error: "Forbidden" }, headers);
       return;
     }
     if (url.pathname === "/api/health") {

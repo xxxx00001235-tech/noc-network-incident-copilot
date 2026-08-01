@@ -24,10 +24,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   signal?.addEventListener('abort', abortRequest, { once: true });
 
   try {
+    let role = 'operator';
+    try { role = JSON.parse(localStorage.getItem('noc-copilot-state') || '{}')?.state?.currentUser?.role || role; } catch { /* use least-privileged role */ }
     const response = await fetch(`${fastApiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`, {
       ...requestInit,
       headers: {
         Accept: 'application/json',
+        'X-NOC-Role': role,
         ...headers,
       },
       cache: 'no-store',

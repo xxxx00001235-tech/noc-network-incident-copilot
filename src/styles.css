@@ -44,3 +44,7 @@
   .monitor-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .monitor-detail-grid{grid-template-columns:1fr}
 }
+[data-role="engineer"] .incident-tabs + .card .toolbar,
+[data-role="engineer"] .incident-tabs ~ .split .form-actions,
+[data-role="engineer"] .incident-tabs ~ .split .card-head .btn,
+[data-role="engineer"] .incident-tabs ~ .split .contacts .btn { display:none }

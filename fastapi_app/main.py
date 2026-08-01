@@ -5,12 +5,38 @@ from datetime import datetime, timezone
 import os
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 
 app = FastAPI(title="NOC Alarm API")
+
+ROLE_PERMISSIONS = {
+    "admin": {"read", "operate", "manage_devices", "manage_access"},
+    "operator": {"read", "operate"},
+    "engineer": {"read", "manage_devices"},
+}
+
+
+def required_permission(method: str, path: str) -> str | None:
+    if not path.startswith("/api/"):
+        return None
+    if method == "POST" and path == "/api/alarms":
+        return "operate"
+    return "read"
+
+
+@app.middleware("http")
+async def permission_middleware(request: Request, call_next):
+    permission = required_permission(request.method, request.url.path)
+    if permission is not None:
+        role = request.headers.get("X-NOC-Role", "")
+        if role not in ROLE_PERMISSIONS or permission not in ROLE_PERMISSIONS[role]:
+            return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+        request.state.role = role
+    return await call_next(request)
 allowed_origins = [
     origin.strip()
     for origin in os.getenv(
