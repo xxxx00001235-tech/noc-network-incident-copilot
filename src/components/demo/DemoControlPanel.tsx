@@ -5,8 +5,8 @@ import { useNocStore } from '../../store/useNocStore';
 import type { DemoScenario } from '../../types';
 
 const scenarios:{id:DemoScenario;title:string;device:string;description:string;icon:typeof Network}[]=[
- {id:'core-router-failure',title:'台北南港核心路由器故障',device:'RTR-CORE-001',description:'Critical · 核心路徑中斷',icon:Network},
- {id:'olt-access-failure',title:'OLT Access 異常',device:'OLT-HC-001',description:'Major · Optical LOS',icon:AlertTriangle},
+ {id:'core-router-failure',title:'台北南港核心路由器故障',device:'RTR-TP-NG-CORE-001',description:'Critical · 核心路徑中斷',icon:Network},
+ {id:'olt-access-failure',title:'OLT Access 異常',device:'OLT-TP-NG-ACCESS-001',description:'Major · Optical LOS',icon:AlertTriangle},
  {id:'maintenance-event',title:'維護事件',device:'RTR-TP-NG-BACKUP-001',description:'Warning · 計畫性維護',icon:Wrench},
 ];
 

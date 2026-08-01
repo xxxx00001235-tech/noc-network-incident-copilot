@@ -11,7 +11,7 @@ export const diagnose=(alarm?:Alarm):DiagnosticResult=>{
   rootCause:cpu?'設備負載異常，可能有程序耗用資源':optical?'上游光纖中斷或 SFP 光模組異常':'設備連線或介面狀態異常',
   confidence:cpu?82:optical?87:74,
   evidence:cpu?['CPU 使用率超過 90%','設備仍可連線','同區域無其他連鎖告警']:['上游設備仍可達','目標設備 Ping 失敗','SNMP 無回應','同區域下游設備同時告警','Optical LOS 同時發生'],
-  impact:alarm?.deviceId==='OLT-HC-001'?'下游 28 台設備可能受影響':'核心路徑與下游服務可能中斷',
+  impact:alarm?.deviceId==='OLT-TP-NG-ACCESS-001'?'下游 28 台設備可能受影響':'核心路徑與下游服務可能中斷',
   steps:['先確認是否存在維護作業','檢查上游介面狀態','確認光功率與 SFP 模組','聯絡設備管理員'],
   contact:contacts[0].name,maintenanceLikely:Boolean(alarm?.maintenance),risk:'若核心路徑無備援，影響範圍可能持續擴大',
  };

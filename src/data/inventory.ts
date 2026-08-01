@@ -2,7 +2,7 @@ import inventory from '../../inventory/device-inventory.json';
 import type { Device, TopologyLink, TopologyNode } from '../types';
 
 type InventoryDevice = Omit<Device, 'upstream'|'downstream'|'backup'>;
-export const deviceIdAliases:Record<string,string>={'RTR-TP-XY-001':'RTR-TP-NG-BACKUP-001','RTR-TP-NG-CORE-001':'RTR-CORE-001','SW-TP-NG-DIST-001':'SW-TP-NG-001','OLT-TP-NG-ACCESS-001':'OLT-HC-001'};
+export const deviceIdAliases:Record<string,string>={'RTR-TP-XY-001':'RTR-TP-NG-BACKUP-001','RTR-CORE-001':'RTR-TP-NG-CORE-001','SW-TP-NG-001':'SW-TP-NG-DIST-001','OLT-HC-001':'OLT-TP-NG-ACCESS-001'};
 export const canonicalDeviceId=(id:string)=>deviceIdAliases[id]??id;
 export const topologyLinks:TopologyLink[]=inventory.links;
 export const topologyNodes:TopologyNode[]=inventory.topology;

@@ -1,54 +1,26 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Bell, CheckCircle2, Clock, Edit3, Expand, FlaskConical, MapPin, Plus, Radio, RotateCcw, Save, Server, ShieldCheck, Trash2, Wrench, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMaintenance, type MaintenanceResponse } from '../api/maintenance';
-import { fetchTopology, type TopologyApiNode, type TopologyDeviceReference, type TopologyResponse } from '../api/topology';
 import { regions } from '../data/mockData';
-import { topologyLinks, topologyNodes } from '../data/inventory';
+import { canonicalDeviceId, topologyLinks, topologyNodes } from '../data/inventory';
 import { useNocStore } from '../store/useNocStore';
 import type { Device, Role } from '../types';
 import { Badge, Card, Empty, Status } from '../components/common/UI';
 import { DiagnosisPanel } from '../components/diagnosis/DiagnosisPanel';
 
-function topologyRefId(reference:TopologyDeviceReference|null|undefined){
- if(typeof reference==='string')return reference;
- return reference?.device_id||reference?.id||'';
-}
-function topologyNodeId(node:TopologyApiNode){return node.device_id||node.id||''}
-function topologyDeviceStatus(status?:string):Device['status']{
- const value=status?.toLowerCase();
- if(['down','fault','incident','critical'].includes(value||''))return'incident';
- if(['maintenance','maintaining'].includes(value||''))return'maintenance';
- if(['unknown','affected','warning'].includes(value||''))return'unknown';
- return'normal';
-}
 export function TopologyPage(){
  const devices=useNocStore(s=>s.devices);
  const latestAlarm=useNocStore(s=>s.alarms[0]);
- const[selected,setSelected]=useState('SW-TP-NG-001');
- const[apiTopology,setApiTopology]=useState<TopologyResponse|null>(null);
- const[syncState,setSyncState]=useState<'loading'|'success'|'error'>('loading');
- const[syncMessage,setSyncMessage]=useState('正在取得最新告警與拓樸資料…');
+ const defaultDeviceId=topologyNodes[0]?.deviceId??'';
+ const[selected,setSelected]=useState(defaultDeviceId);
+ const[syncMessage,setSyncMessage]=useState('拓樸節點與連線已從 Device Inventory 載入');
  const[maintenanceData,setMaintenanceData]=useState<MaintenanceResponse|null>(null);
  const[maintenanceState,setMaintenanceState]=useState<'loading'|'success'|'error'>('loading');
  const[maintenanceMessage,setMaintenanceMessage]=useState('正在查詢設備維護狀態…');
  const[maintenanceRefresh,setMaintenanceRefresh]=useState(0);
- const syncTopology=useCallback(async(deviceId=latestAlarm?.deviceId)=>{
-  setSyncState('loading');setSyncMessage('正在取得最新告警與拓樸資料…');
-  try{
-   if(!deviceId)throw new Error('目前沒有可同步的告警');
-   const topology=await fetchTopology(deviceId);
-   setApiTopology(topology);
-   const faultId=topologyRefId(topology.fault_device)||deviceId;
-   setSelected(faultId);
-   setSyncState('success');setSyncMessage(`已同步 ${latestAlarm?.deviceName||deviceId}（${deviceId}）拓樸`);
-  }catch(error){
-   setApiTopology(null);
-   setSelected(deviceId||'SW-TP-NG-001');
-   setSyncState('error');setSyncMessage(`${error instanceof Error?error.message:'拓樸同步失敗'}；目前顯示原有模擬拓樸`);
-  }
- },[latestAlarm?.deviceId,latestAlarm?.deviceName]);
- useEffect(()=>{void syncTopology(latestAlarm?.deviceId)},[latestAlarm?.deviceId,syncTopology]);
+ const faultId=canonicalDeviceId(latestAlarm?.deviceId??'');
+ useEffect(()=>{if(topologyNodes.some(node=>node.deviceId===faultId))setSelected(faultId)},[faultId]);
  useEffect(()=>{
   let active=true;
   setMaintenanceData(null);setMaintenanceState('loading');setMaintenanceMessage('正在查詢設備維護狀態…');
@@ -63,54 +35,15 @@ export function TopologyPage(){
   });
   return()=>{active=false};
  },[selected,maintenanceRefresh]);
- const faultId=topologyRefId(apiTopology?.fault_device);
- const affectedIds=useMemo(()=>new Set(apiTopology?.affected_device_ids||[]),[apiTopology]);
- const shownNodes=useMemo(()=>{
-  if(!apiTopology?.nodes?.length){
-   if(latestAlarm?.deviceId&&!topologyNodes.some(node=>node.deviceId===latestAlarm.deviceId)&&devices.some(device=>device.id===latestAlarm.deviceId))return[...topologyNodes,{id:`demo-${latestAlarm.deviceId}`,deviceId:latestAlarm.deviceId,x:82,y:88}];
-   return topologyNodes;
-  }
-  const columns=Math.min(3,Math.max(1,Math.ceil(Math.sqrt(apiTopology.nodes.length))));
-  const rows=Math.ceil(apiTopology.nodes.length/columns);
-  return apiTopology.nodes.map((node,index)=>{
-   const id=topologyNodeId(node);const mock=topologyNodes.find(x=>x.deviceId===id);
-   const column=index%columns,row=Math.floor(index/columns);
-   return{id,deviceId:id,x:node.x??mock?.x??((column+1)/(columns+1))*100,y:node.y??mock?.y??(rows===1?50:12+(row/(rows-1))*76)};
-  }).filter(node=>node.id);
- },[apiTopology,devices,latestAlarm?.deviceId]);
- const shownLinks=useMemo(()=>apiTopology?.links?.length?apiTopology.links.map((link,index)=>({id:link.id||`api-link-${index}`,source:link.source,target:link.target,backup:link.backup})):topologyLinks,[apiTopology]);
- const shownDevices=useMemo(()=>{
-  if(!apiTopology?.nodes?.length)return devices;
-  const map=new Map(devices.map(device=>[device.id,{...device,downstream:[...device.downstream]}]));
-  const responseUpstream=apiTopology.upstream.map(topologyRefId).filter(Boolean);
-  const responseDownstream=apiTopology.downstream.map(topologyRefId).filter(Boolean);
-  apiTopology.nodes.forEach(node=>{
-   const id=topologyNodeId(node);if(!id)return;
-   const current=map.get(id);
-   const linkedUpstream=shownLinks.find(link=>link.target===id)?.source;
-   const linkedDownstream=shownLinks.filter(link=>link.source===id).map(link=>link.target);
-   map.set(id,{
-    id,
-    name:node.device_name||node.name||current?.name||id,
-    ip:node.ip||current?.ip||'—',
-    type:node.device_type||node.type||current?.type||'NOC 設備',
-    region:node.region||current?.region||'Lab',
-    site:node.site||current?.site||'FastAPI 拓樸',
-    status:id===faultId?'incident':topologyDeviceStatus(node.status||current?.status),
-    alarms:id===faultId?Math.max(1,current?.alarms||0):current?.alarms||0,
-    upstream:linkedUpstream||(id===faultId?responseUpstream[0]:undefined)||current?.upstream,
-    downstream:linkedDownstream.length?linkedDownstream:(id===faultId&&responseDownstream.length?responseDownstream:current?.downstream||[]),
-    backup:current?.backup,
-    maintenance:current?.maintenance,
-    cpu:current?.cpu,
-   });
-  });
-  return[...map.values()];
- },[apiTopology,devices,faultId,shownLinks]);
+ const affectedIds=useMemo(()=>{
+  const affected=new Set<string>(),visit=(deviceId:string)=>devices.find(device=>device.id===deviceId)?.downstream.forEach(child=>{if(!affected.has(child)){affected.add(child);visit(child)}});
+  if(faultId)visit(faultId);
+  return affected;
+ },[devices,faultId]);
  const selectedApiMaintenance=maintenanceData?.device_id===selected&&maintenanceData.under_maintenance?maintenanceData.maintenance:null;
  const effectiveDevices=useMemo(()=>{
-  if(!selectedApiMaintenance)return shownDevices;
-  return shownDevices.map(device=>device.id===selected?{...device,status:'maintenance' as const,maintenance:{
+  if(!selectedApiMaintenance)return devices;
+  return devices.map(device=>device.id===selected?{...device,status:'maintenance' as const,maintenance:{
    type:'維護作業',
    content:selectedApiMaintenance.description,
    start:selectedApiMaintenance.start_time,
@@ -120,10 +53,10 @@ export function TopologyPage(){
    impact:'拓樸節點維護',
    note:`負責人：${selectedApiMaintenance.owner.username}${selectedApiMaintenance.owner.email?` · ${selectedApiMaintenance.owner.email}`:''}`,
   }}:device);
- },[selected,selectedApiMaintenance,shownDevices]);
+ },[devices,selected,selectedApiMaintenance]);
  const d=effectiveDevices.find(x=>x.id===selected);
  const selectedAffected=affectedIds.has(selected)&&selected!==faultId&&!selectedApiMaintenance;
- return <div className="page"><div className="page-title"><div><span className="eyebrow">NETWORK TOPOLOGY</span><h1>網路拓樸</h1><p>查看上游、障礙節點、下游影響與備援路徑。</p></div><button className="btn primary" onClick={()=>void syncTopology()} disabled={syncState==='loading'}><RotateCcw className={syncState==='loading'?'spin':''}/>重新整理</button></div><div className={`api-state ${syncState}`}>{syncState==='loading'?<RotateCcw className="spin"/>:syncState==='success'?<CheckCircle2/>:<AlertTriangle/>}<span><b>{syncState==='loading'?'拓樸同步中':syncState==='success'?'拓樸同步成功':'FastAPI 拓樸無法載入'}</b><small>{syncMessage}</small></span></div><div className="legend-row topology-legend"><span><i className="normal"/>正常</span><span><i className="incident"/>障礙</span><span><i style={{background:'#ff9f43'}}/>受影響</span><span><i className="maintenance"/>維護</span><span><i className="unknown"/>未知</span><span><i className="backup"/>備援路徑</span></div><div className="split"><Card className="topology-canvas"><div className="topology">{shownLinks.map(l=>{const a=shownNodes.find(n=>n.id===l.source),b=shownNodes.find(n=>n.id===l.target);if(!a||!b)return null;return <svg key={l.id}><line x1={`${a.x}%`} y1={`${a.y}%`} x2={`${b.x}%`} y2={`${b.y}%`} className={l.backup?'backup':''}/></svg>})}{shownNodes.map(n=>{const x=effectiveDevices.find(device=>device.id===n.deviceId);if(!x)return null;const isMaintenance=x.status==='maintenance',isFault=x.id===faultId&&!isMaintenance,isAffected=affectedIds.has(x.id)&&!isFault&&!isMaintenance;const nodeStatus=isMaintenance?'maintenance':isFault?'incident':x.status;return <button key={n.id} style={{left:`${n.x}%`,top:`${n.y}%`,...(isAffected?{borderColor:'#ff9f43',boxShadow:'0 0 18px #ff9f4333'}:{})}} className={`node ${nodeStatus} ${selected===x.id?'selected':''}`} onClick={()=>setSelected(x.id)}><Server/><b>{x.name}</b><small>{x.type} · {x.ip}</small><em style={isAffected?{color:'#ff9f43'}:undefined}>{isMaintenance?x.maintenance?.type||'維護':isFault?'障礙':isAffected?'受影響':x.status==='unknown'?'未知':'正常'}</em></button>})}</div></Card><Card title="節點詳細資訊" action={<button className="btn small" onClick={()=>setMaintenanceRefresh(value=>value+1)} disabled={maintenanceState==='loading'}><RotateCcw className={maintenanceState==='loading'?'spin':''}/>更新維護狀態</button>}><div className={`api-state ${maintenanceState}`}>{maintenanceState==='loading'?<RotateCcw className="spin"/>:maintenanceState==='success'?<CheckCircle2/>:<AlertTriangle/>}<span><b>{maintenanceState==='loading'?'維護狀態載入中':maintenanceState==='success'?'維護狀態已同步':'維護 API 無法載入'}</b><small>{maintenanceMessage}</small></span></div>{d?<><div className="detail-head"><h2>{d.name}</h2>{selectedAffected?<Badge tone="warning">受影響</Badge>:<Status status={d.status}/>}</div><dl className="detail-grid"><dt>設備類型</dt><dd>{d.type}</dd><dt>IP 位址</dt><dd>{d.ip}</dd><dt>區域／局名</dt><dd>{d.region}／{d.site}</dd><dt>作用中告警</dt><dd>{d.alarms}</dd><dt>上游設備</dt><dd>{d.upstream??'—'}</dd><dt>下游設備</dt><dd>{d.downstream.join('、')||'—'}</dd><dt>備援設備</dt><dd>{d.backup??'—'}</dd></dl>{selectedAffected&&<div className="maintenance-note"><b>下游受影響設備</b><br/>此節點位於障礙設備下游，狀態由 FastAPI 拓樸分析標示。</div>}{d.maintenance&&<div className="maintenance-note"><b>{d.maintenance.type}</b><br/>{d.maintenance.content}<br/>{d.maintenance.start}–{d.maintenance.end}<br/>{d.maintenance.note}</div>}</>:<Empty/>}</Card></div></div>
+ return <div className="page"><div className="page-title"><div><span className="eyebrow">NETWORK TOPOLOGY</span><h1>網路拓樸</h1><p>查看上游、障礙節點、下游影響與備援路徑。</p></div><button className="btn primary" onClick={()=>{const alarmDeviceId=canonicalDeviceId(latestAlarm?.deviceId??'');if(topologyNodes.some(node=>node.deviceId===alarmDeviceId))setSelected(alarmDeviceId);setSyncMessage(`已重新載入 Device Inventory · ${new Date().toLocaleTimeString('zh-TW')}`)}}><RotateCcw/>重新整理</button></div><div className="api-state success"><CheckCircle2/><span><b>Device Inventory 已同步</b><small>{syncMessage}</small></span></div><div className="legend-row topology-legend"><span><i className="normal"/>正常</span><span><i className="incident"/>障礙</span><span><i style={{background:'#ff9f43'}}/>受影響</span><span><i className="maintenance"/>維護</span><span><i className="unknown"/>未知</span><span><i className="backup"/>備援路徑</span></div><div className="split"><Card className="topology-canvas"><div className="topology">{topologyLinks.map(l=>{const a=topologyNodes.find(n=>n.id===l.source),b=topologyNodes.find(n=>n.id===l.target);if(!a||!b)return null;return <svg key={l.id}><line x1={`${a.x}%`} y1={`${a.y}%`} x2={`${b.x}%`} y2={`${b.y}%`} className={l.backup?'backup':''}/></svg>})}{topologyNodes.map(n=>{const x=effectiveDevices.find(device=>device.id===n.deviceId);if(!x)return null;const isMaintenance=x.status==='maintenance',isFault=x.id===faultId&&!isMaintenance,isAffected=affectedIds.has(x.id)&&!isFault&&!isMaintenance;const nodeStatus=isMaintenance?'maintenance':isFault?'incident':x.status;return <button key={n.id} style={{left:`${n.x}%`,top:`${n.y}%`,...(isAffected?{borderColor:'#ff9f43',boxShadow:'0 0 18px #ff9f4333'}:{})}} className={`node ${nodeStatus} ${selected===x.id?'selected':''}`} onClick={()=>setSelected(x.id)}><Server/><b>{x.name}</b><small>{x.type} · {x.ip}</small><em style={isAffected?{color:'#ff9f43'}:undefined}>{isMaintenance?x.maintenance?.type||'維護':isFault?'障礙':isAffected?'受影響':x.status==='unknown'?'未知':'正常'}</em></button>})}</div></Card><Card title="節點詳細資訊" action={<button className="btn small" onClick={()=>setMaintenanceRefresh(value=>value+1)} disabled={maintenanceState==='loading'}><RotateCcw className={maintenanceState==='loading'?'spin':''}/>更新維護狀態</button>}><div className={`api-state ${maintenanceState}`}>{maintenanceState==='loading'?<RotateCcw className="spin"/>:maintenanceState==='success'?<CheckCircle2/>:<AlertTriangle/>}<span><b>{maintenanceState==='loading'?'維護狀態載入中':maintenanceState==='success'?'維護狀態已同步':'維護 API 無法載入'}</b><small>{maintenanceMessage}</small></span></div>{d?<><div className="detail-head"><h2>{d.name}</h2>{selectedAffected?<Badge tone="warning">受影響</Badge>:<Status status={d.status}/>}</div><dl className="detail-grid"><dt>設備類型</dt><dd>{d.type}</dd><dt>IP 位址</dt><dd>{d.ip}</dd><dt>區域／局名</dt><dd>{d.region}／{d.site}</dd><dt>作用中告警</dt><dd>{d.alarms}</dd><dt>上游設備</dt><dd>{d.upstream??'—'}</dd><dt>下游設備</dt><dd>{d.downstream.join('、')||'—'}</dd><dt>備援設備</dt><dd>{d.backup??'—'}</dd></dl>{selectedAffected&&<div className="maintenance-note"><b>下游受影響設備</b><br/>此節點位於障礙設備下游，狀態依 Device Inventory 關聯標示。</div>}{d.maintenance&&<div className="maintenance-note"><b>{d.maintenance.type}</b><br/>{d.maintenance.content}<br/>{d.maintenance.start}–{d.maintenance.end}<br/>{d.maintenance.note}</div>}</>:<Empty/>}</Card></div></div>
 }
 export function RegionMapPage(){
  const setFilter=useNocStore(s=>s.setRegionFilter),nav=useNavigate();const[selected,setSelected]=useState('台北');const r=regions.find(x=>x.name===selected)!;return <div className="page"><div className="page-title"><div><span className="eyebrow">REGIONAL AWARENESS</span><h1>NOC 區域地圖</h1><p>簡化台灣區域監控圖，不使用外部地圖服務。</p></div></div><div className="split equal"><Card title="台灣區域監控"><div className="taiwan-map">{regions.map((x,i)=><button key={x.name} className={`${selected===x.name?'active':''} ${x.critical?'critical':''}`} style={{top:`${7+i*12}%`,left:`${44+(i%3-1)*8}%`}} onClick={()=>setSelected(x.name)}><MapPin/>{x.name}<small>C{x.critical} / M{x.major}</small></button>)}</div></Card><Card title={`${r.name} 區域概況`}><div className="region-stats"><div><AlertTriangle/><span>Critical<b>{r.critical}</b></span></div><div><Bell/><span>Major<b>{r.major}</b></span></div><div><Server/><span>設備總數<b>{r.devices}</b></span></div><div><XCircle/><span>障礙數量<b>{r.incidents}</b></span></div><div><Wrench/><span>維護數量<b>{r.maintenance}</b></span></div></div>{selected==='台北'&&<><h3>台北局名</h3><div className="site-list">{['南港','信義','松山','中山','大同'].map((x,i)=><button key={x}>{x}<Badge tone={i===0?'critical':i===1?'maintenance':'normal'}>{i===0?'1 障礙':i===1?'1 維護':'正常'}</Badge></button>)}</div></>}<button className="btn primary wide" onClick={()=>{setFilter(selected);nav('/alarms')}}>篩選此區域告警</button></Card></div></div>

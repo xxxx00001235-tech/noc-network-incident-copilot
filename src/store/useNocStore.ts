@@ -22,8 +22,8 @@ interface NocState {
 const now = () => new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
 const demoIds={alarm:'ALM-DEMO-S4-1',incident:'INC-DEMO-S4-1'};
 const demoScenarios:Record<DemoScenario,{deviceId:string;severity:Alarm['severity'];content:string;cause:string;affectedDevices:number;affectedUsers:number;maintenance:boolean;timeline:string[]}>= {
-  'core-router-failure':{deviceId:'RTR-CORE-001',severity:'Critical',content:'台北南港核心路由器失聯',cause:'核心路由器上行介面異常，導致南港核心路徑中斷',affectedDevices:5,affectedUsers:820,maintenance:false,timeline:['監控系統偵測核心路由器失聯','AI 完成關聯告警分析並識別核心路徑影響','已產生 Teams 障礙初報草稿']},
-  'olt-access-failure':{deviceId:'OLT-HC-001',severity:'Major',content:'OLT Access 光訊號異常',cause:'OLT PON 介面偵測 Optical LOS，Access 服務降級',affectedDevices:28,affectedUsers:356,maintenance:false,timeline:['監控系統偵測 OLT Access 異常','AI 判斷為光訊號或上游光纖異常','已產生 Teams 障礙初報草稿']},
+  'core-router-failure':{deviceId:'RTR-TP-NG-CORE-001',severity:'Critical',content:'台北南港核心路由器失聯',cause:'核心路由器上行介面異常，導致南港核心路徑中斷',affectedDevices:5,affectedUsers:820,maintenance:false,timeline:['監控系統偵測核心路由器失聯','AI 完成關聯告警分析並識別核心路徑影響','已產生 Teams 障礙初報草稿']},
+  'olt-access-failure':{deviceId:'OLT-TP-NG-ACCESS-001',severity:'Major',content:'OLT Access 光訊號異常',cause:'OLT PON 介面偵測 Optical LOS，Access 服務降級',affectedDevices:28,affectedUsers:356,maintenance:false,timeline:['監控系統偵測 OLT Access 異常','AI 判斷為光訊號或上游光纖異常','已產生 Teams 障礙初報草稿']},
   'maintenance-event':{deviceId:'RTR-TP-NG-BACKUP-001',severity:'Warning',content:'計畫性維護事件進行中',cause:'設備處於既定維護時段，告警判定為維護相關事件',affectedDevices:1,affectedUsers:0,maintenance:true,timeline:['維護事件已依 Device Inventory 啟動','AI 已比對既有維護資訊','已產生 Teams 維護初報草稿']},
 };
 export const useNocStore = create<NocState>()(persist((set,get)=>({
