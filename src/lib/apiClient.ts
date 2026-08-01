@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 
 const configuredBaseUrl = import.meta.env.VITE_FASTAPI_BASE_URL?.trim();
-const fastApiBaseUrl = (configuredBaseUrl || '/fastapi').replace(/\/+$/, '');
+const fastApiBaseUrl = (configuredBaseUrl || 'http://192.168.176.130:8000').replace(/\/+$/, '');
 
 type RequestOptions = RequestInit & {
   timeoutMs?: number;

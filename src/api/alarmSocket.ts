@@ -5,8 +5,6 @@ import type { Alarm } from '../types';
 export type AlarmSocketState = 'connecting' | 'connected' | 'disconnected';
 
 function socketUrl() {
-  const explicit = import.meta.env.VITE_FASTAPI_WS_URL?.trim();
-  if (explicit) return explicit;
   const base = new URL(fastApiBaseUrl, window.location.href);
   base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
   base.pathname = `${base.pathname.replace(/\/$/, '')}/ws/alarms`;
