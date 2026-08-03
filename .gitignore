@@ -13,3 +13,6 @@ runtime-data/
 *.log
 
 .npm-cache/
+
+__pycache__/
+*.pyc
