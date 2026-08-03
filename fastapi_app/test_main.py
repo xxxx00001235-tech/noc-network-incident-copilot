@@ -48,8 +48,8 @@ def test_inventory_is_shared_by_operational_apis() -> None:
 
 def test_alarm_websocket_receives_published_alarm() -> None:
     alarm = {
-        "device_id": "SW-TP-NG-001",
-        "device_name": "SW-TP-NG-001",
+        "device_id": "SW-TP-NG-DIST-001",
+        "device_name": "SW-TP-NG-DIST-001",
         "alarm": "Device Down",
         "status": "DOWN",
         "severity": "Critical",

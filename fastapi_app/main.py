@@ -12,8 +12,28 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from fastapi_app.database import Base, SessionLocal, engine
+from fastapi_app.models import User
+from fastapi_app.routers.users import router as users_router
+from fastapi_app.services import JWT_ALGORITHM, JWT_SECRET, create_initial_admin
+from jose import JWTError, jwt
+
 
 app = FastAPI(title="NOC Alarm API")
+Base.metadata.create_all(bind=engine)
+with SessionLocal() as startup_db:
+    create_initial_admin(startup_db)
+app.include_router(users_router)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 ROLE_PERMISSIONS = {
     "admin": {"read", "operate", "manage_devices", "manage_access"},
@@ -23,6 +43,8 @@ ROLE_PERMISSIONS = {
 
 
 def required_permission(method: str, path: str) -> str | None:
+    if path in {"/api/register", "/api/login", "/api/me"} or path.startswith("/api/users") or path.startswith("/api/admin/") or path == "/api/pending-users":
+        return None
     if not path.startswith("/api/"):
         return None
     if method == "POST" and path == "/api/alarms":
@@ -34,7 +56,20 @@ def required_permission(method: str, path: str) -> str | None:
 async def permission_middleware(request: Request, call_next):
     permission = required_permission(request.method, request.url.path)
     if permission is not None:
-        role = request.headers.get("X-NOC-Role", "")
+        role = ""
+        authorization = request.headers.get("Authorization", "")
+        if authorization.startswith("Bearer "):
+            try:
+                payload = jwt.decode(authorization[7:], JWT_SECRET, algorithms=[JWT_ALGORITHM])
+                with SessionLocal() as db:
+                    user = db.get(User, int(payload.get("sub", "")))
+                    if user is None or user.status != "approved":
+                        raise ValueError
+                    role = user.role
+            except (JWTError, TypeError, ValueError):
+                return JSONResponse(status_code=401, content={"detail": "Invalid authentication token"})
+        else:
+            role = request.headers.get("X-NOC-Role", "")
         if role not in ROLE_PERMISSIONS or permission not in ROLE_PERMISSIONS[role]:
             return JSONResponse(status_code=403, content={"detail": "Forbidden"})
         request.state.role = role
@@ -52,7 +87,7 @@ allowed_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 clients: set[WebSocket] = set()

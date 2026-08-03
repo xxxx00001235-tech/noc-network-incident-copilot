@@ -1,0 +1,1 @@
+"""NOC FastAPI application package."""
