@@ -10,6 +10,7 @@ interface NocState {
   currentUser:User|null; users:User[]; alarms:Alarm[]; devices:Device[]; incidents:Incident[];
   selectedAlarmId:string; theme:Theme; toast:string; regionFilter:string; realtimeState:AlarmSocketState; unreadAlarmCount:number; activeDemoScenario:DemoScenario|null; activeDemoIncidentId:string;
   login:(username:string,password:string)=>boolean; logout:()=>void; switchRole:(role:Role)=>void;
+  loginApiUser:(user:{id:number;username:string;email:string;role:Role})=>void;
   setTheme:(theme:Theme)=>void; selectAlarm:(id:string)=>void; notify:(text:string)=>void; clearToast:()=>void;
   syncAlarm:(alarm:Alarm)=>void;
   receiveRealtimeAlarm:(alarm:Alarm)=>void; acknowledgeAlarms:()=>void;
@@ -33,7 +34,8 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
     const user=get().users.find(u=>u.username===username&&u.password===password&&u.status==='啟用');
     if(user) set({currentUser:user}); return Boolean(user);
   },
-  logout:()=>set({currentUser:null}),
+  loginApiUser:(user)=>set({currentUser:{id:String(user.id),username:user.username,password:'',name:user.username,employeeId:user.username,email:user.email,teams:'',phone:'',department:'NOC',role:user.role,status:'啟用'}}),
+  logout:()=>{localStorage.removeItem('noc-access-token');set({currentUser:null})},
   switchRole:(role)=>{const user=get().users.find(u=>u.role===role&&u.status==='啟用'); if(user)set({currentUser:user});},
   setTheme:(theme)=>set({theme}), selectAlarm:(selectedAlarmId)=>set({selectedAlarmId}),
   setRealtimeState:(realtimeState)=>set({realtimeState}),

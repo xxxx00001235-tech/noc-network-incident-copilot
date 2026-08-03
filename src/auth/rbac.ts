@@ -13,7 +13,7 @@ export const permissionLabels: Record<Permission, string> = {
 };
 export const rolePermissions: Record<Role, readonly Permission[]> = {
   admin: Object.keys(permissionLabels) as Permission[],
-  operator: ['dashboard.view','alarms.view','incidents.view','incidents.manage','topology.view','diagnosis.view','lab.use','wallboard.view'],
+  operator: ['dashboard.view','alarms.view','incidents.view','incidents.manage','topology.view','diagnosis.view','lab.use','wallboard.view','devices.view'],
   engineer: ['dashboard.view','alarms.view','incidents.view','topology.view','diagnosis.view','wallboard.view','devices.view','devices.manage'],
 };
 export const routePermissions: Record<string, Permission> = {
