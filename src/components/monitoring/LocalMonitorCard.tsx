@@ -32,7 +32,18 @@ type MonitorAlert = {
 
 const isLocalBrowser = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
 const liveRequested = import.meta.env.VITE_DATA_MODE === 'live' || isLocalBrowser;
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:3001';
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const apiBaseUrl = (() => {
+  const candidate = configuredApiBaseUrl || (import.meta.env.PROD ? window.location.origin : 'http://127.0.0.1:3001');
+  try {
+    const url = new URL(candidate, window.location.href);
+    if (window.location.protocol === 'https:' && url.protocol !== 'https:') return null;
+    return url.toString().replace(/\/+$/, '');
+  } catch (error) {
+    console.warn('Local monitor API URL is invalid; live metrics are disabled.', error);
+    return null;
+  }
+})();
 const metricLabels = { cpu: 'CPU', memory: '記憶體', disk: '系統磁碟' };
 
 const formatBytes = (bytes: number | null) => {
@@ -54,7 +65,7 @@ export function LocalMonitorCard() {
   const [offline, setOffline] = useState(liveRequested);
 
   useEffect(() => {
-    if (!liveRequested) return;
+    if (!liveRequested || !apiBaseUrl) return;
     let cancelled = false;
     const load = async () => {
       try {

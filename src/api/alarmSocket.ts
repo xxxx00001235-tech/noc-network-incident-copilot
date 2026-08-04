@@ -1,4 +1,4 @@
-import { fastApiBaseUrl } from '../lib/apiClient';
+import { demoSafeModeMessage, fastApiBaseUrl, isBackendAvailable, reportBackendUnavailable } from '../lib/apiClient';
 import { normalizeFastApiAlarm, type FastApiAlarm, type LatestAlarmResponse } from './alarms';
 import type { Alarm } from '../types';
 import type { AnalysisDiagnosis } from './analysis';
@@ -8,6 +8,7 @@ export type AlarmSocketState = 'connecting' | 'connected' | 'disconnected';
 function socketUrl() {
   const base = new URL(fastApiBaseUrl, window.location.href);
   base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (window.location.protocol === 'https:' && base.protocol !== 'wss:') return null;
   base.pathname = `${base.pathname.replace(/\/$/, '')}/ws/alarms`;
   base.search = '';
   return base.toString();
@@ -40,8 +41,25 @@ export function connectAlarmSocket(options: {
 
   const connect = () => {
     if (stopped) return;
+    if (!isBackendAvailable()) {
+      options.onState('disconnected');
+      console.warn(demoSafeModeMessage);
+      return;
+    }
     options.onState('connecting');
-    socket = new WebSocket(socketUrl());
+    const url = socketUrl();
+    if (!url) {
+      options.onState('disconnected');
+      console.warn(demoSafeModeMessage);
+      return;
+    }
+    try {
+      socket = new WebSocket(url);
+    } catch (error) {
+      options.onState('disconnected');
+      reportBackendUnavailable(error);
+      return;
+    }
     socket.onopen = () => {
       retryCount = 0;
       options.onState('connected');
@@ -63,7 +81,10 @@ export function connectAlarmSocket(options: {
       const delay = Math.min(30_000, 1_000 * 2 ** Math.min(retryCount++, 5));
       retryTimer = window.setTimeout(connect, delay);
     };
-    socket.onerror = () => socket?.close();
+    socket.onerror = event => {
+      reportBackendUnavailable(event);
+      socket?.close();
+    };
   };
 
   connect();
