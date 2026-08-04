@@ -7,9 +7,9 @@ import type { Alarm, IncidentStatus } from '../types';
 import { Badge, Card, Empty, severityTone, Status } from '../components/common/UI';
 import { DiagnosisPanel } from '../components/diagnosis/DiagnosisPanel';
 import { TestRunner } from '../components/testing/TestRunner';
-import { fetchAnalysis, type AnalysisResponse } from '../api/analysis';
+import { fetchAiTimeline, fetchAnalysis, type AiTimelineEvent, type AnalysisResponse } from '../api/analysis';
 import { fetchLatestAlarm } from '../api/alarms';
-import { fetchReport, type ReportResponse } from '../api/report';
+import { generateTeamsReport, type ReportResponse } from '../api/report';
 import { ApiError } from '../lib/apiClient';
 
 export function AlarmPage(){
@@ -50,7 +50,7 @@ export function IncidentsPage(){
   void(async()=>{
    try{
     const targetDeviceId=fastApiReportDeviceIds.has(reportDeviceId)?reportDeviceId:(await fetchLatestAlarm()).deviceId;
-    const response=await fetchReport(targetDeviceId);
+    const response=await generateTeamsReport(targetDeviceId);
     if(!active)return;
     setApiReport(response);setReportState('success');
    }catch(error){
@@ -70,4 +70,9 @@ export function IncidentsPage(){
 }
 function ContactPanel({incidentId}:{incidentId:string}){const notify=useNocStore(s=>s.notify),add=useNocStore(s=>s.addTimeline);return <Card title="設備管理員聯絡資訊"><div className="contacts">{contacts.map(c=><div key={c.id}><b>第{['一','二','三'][c.priority-1]}順位 · {c.name}</b><span>{c.role} · {c.status}</span><small><Phone/> {c.phone}<br/><Send/> {c.teams}</small><div><button className="btn small" onClick={()=>navigator.clipboard.writeText(`${c.name}\n${c.phone}\n${c.teams}`).then(()=>notify('已複製聯絡資訊'))}><Copy/>複製</button><button className="btn small" onClick={()=>{add(incidentId,`已通知第${c.priority}順位 ${c.name}`);notify('通知時間已記錄')}}><UserCheck/>標記已通知</button></div></div>)}</div><p className="disclaimer">所有姓名與聯絡資訊皆為展示用假資料。</p></Card>}
 
-export function DiagnosisPage(){const alarms=useNocStore(s=>s.alarms),id=useNocStore(s=>s.selectedAlarmId),select=useNocStore(s=>s.selectAlarm);const a=alarms.find(x=>x.id===id)??alarms[0];return <div className="page"><div className="page-title"><div><span className="eyebrow">RULE-BASED COPILOT</span><h1>AI 診斷工作台</h1><p>依模擬告警與查測規則產生可解釋的處理建議。</p></div></div><div className="toolbar"><select value={a?.id} onChange={e=>select(e.target.value)}>{alarms.map(x=><option value={x.id} key={x.id}>{x.id} · {x.deviceName}</option>)}</select></div><div className="split equal"><DiagnosisPanel alarm={a}/><TestRunner incidentId={a?.incidentId}/></div></div>}
+export function DiagnosisPage(){
+ const alarms=useNocStore(s=>s.alarms),id=useNocStore(s=>s.selectedAlarmId),select=useNocStore(s=>s.selectAlarm);const a=alarms.find(x=>x.id===id)??alarms[0];
+ const[analysis,setAnalysis]=useState<AnalysisResponse|null>(null),[timeline,setTimeline]=useState<AiTimelineEvent[]>([]),[state,setState]=useState<'idle'|'loading'|'success'|'error'>('idle');
+ useEffect(()=>{let active=true;if(!a)return;setState('loading');Promise.all([fetchAnalysis(a.deviceId),fetchAiTimeline(a.deviceId)]).then(([nextAnalysis,nextTimeline])=>{if(active){setAnalysis(nextAnalysis);setTimeline(nextTimeline.events);setState('success')}}).catch(()=>{if(active)setState('error')});return()=>{active=false}},[a?.deviceId,a?.id]);
+ return <div className="page"><div className="page-title"><div><span className="eyebrow">NOC AI COPILOT</span><h1>AI 診斷工作台</h1><p>即時彙整告警分析、根因、影響設備與建議處置。</p></div></div><div className="toolbar"><select value={a?.id} onChange={e=>select(e.target.value)}>{alarms.map(x=><option value={x.id} key={x.id}>{x.id} · {x.deviceName}</option>)}</select></div><div className="split equal"><DiagnosisPanel alarm={a} analysis={analysis} analysisState={state}/><Card title="AI Timeline"><div className="timeline ai-timeline">{timeline.map(event=><div key={event.stage}><i/><time>{event.stage}</time><span><b>{event.detail}</b><small>{event.actor} · {new Date(event.time).toLocaleString('zh-TW')}</small></span></div>)}</div></Card></div><div className="split equal"><TestRunner incidentId={a?.incidentId}/></div></div>
+}

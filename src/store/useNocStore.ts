@@ -4,17 +4,20 @@ import { alarms as seedAlarms, incidents as seedIncidents, users as seedUsers } 
 import { canonicalDeviceId, deviceById, devices as seedDevices } from '../data/inventory';
 import type { Alarm, DemoScenario, Device, Incident, IncidentStatus, Role, User } from '../types';
 import type { AlarmSocketState } from '../api/alarmSocket';
+import type { AnalysisDiagnosis } from '../api/analysis';
 
 type Theme = 'dark'|'light'|'ai';
 interface NocState {
   currentUser:User|null; users:User[]; alarms:Alarm[]; devices:Device[]; incidents:Incident[];
   selectedAlarmId:string; theme:Theme; toast:string; regionFilter:string; realtimeState:AlarmSocketState; unreadAlarmCount:number; activeDemoScenario:DemoScenario|null; activeDemoIncidentId:string;
+  aiDiagnosis:AnalysisDiagnosis|null;
   login:(username:string,password:string)=>boolean; logout:()=>void; switchRole:(role:Role)=>void;
   loginApiUser:(user:{id:number;username:string;email:string;role:Role})=>void;
   setTheme:(theme:Theme)=>void; selectAlarm:(id:string)=>void; notify:(text:string)=>void; clearToast:()=>void;
   syncAlarm:(alarm:Alarm)=>void;
   receiveRealtimeAlarm:(alarm:Alarm)=>void; acknowledgeAlarms:()=>void;
   setRealtimeState:(state:AlarmSocketState)=>void;
+  setAiDiagnosis:(diagnosis:AnalysisDiagnosis)=>void;
   setRegionFilter:(region:string)=>void; updateIncident:(id:string,status:IncidentStatus,note:string)=>void;
   addTimeline:(id:string,text:string)=>void; addDevice:(device:Device)=>void; updateDevice:(device:Device)=>void; deleteDevice:(id:string)=>void;
   reviewUser:(id:string,status:User['status'])=>void; setUserRole:(id:string,role:Role)=>void; register:(user:User)=>void;
@@ -29,7 +32,7 @@ const demoScenarios:Record<DemoScenario,{deviceId:string;severity:Alarm['severit
 };
 export const useNocStore = create<NocState>()(persist((set,get)=>({
   currentUser:null, users:seedUsers, alarms:seedAlarms, devices:seedDevices, incidents:seedIncidents,
-  selectedAlarmId:seedAlarms[0].id, theme:'dark', toast:'', regionFilter:'', realtimeState:'connecting', unreadAlarmCount:0, activeDemoScenario:null, activeDemoIncidentId:'',
+  selectedAlarmId:seedAlarms[0].id, theme:'dark', toast:'', regionFilter:'', realtimeState:'connecting', unreadAlarmCount:0, activeDemoScenario:null, activeDemoIncidentId:'', aiDiagnosis:null,
   login:(username,password)=>{
     const user=get().users.find(u=>u.username===username&&u.password===password&&u.status==='啟用');
     if(user) set({currentUser:user}); return Boolean(user);
@@ -39,6 +42,7 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
   switchRole:(role)=>{const user=get().users.find(u=>u.role===role&&u.status==='啟用'); if(user)set({currentUser:user});},
   setTheme:(theme)=>set({theme}), selectAlarm:(selectedAlarmId)=>set({selectedAlarmId}),
   setRealtimeState:(realtimeState)=>set({realtimeState}),
+  setAiDiagnosis:(aiDiagnosis)=>set({aiDiagnosis}),
   syncAlarm:(alarm)=>set(s=>{
     const canonicalId=canonicalDeviceId(alarm.deviceId);
     const inventoryDevice=deviceById.get(canonicalId);
@@ -125,5 +129,5 @@ export const useNocStore = create<NocState>()(persist((set,get)=>({
     const incidents=(state.incidents??seedIncidents).map(incident=>({...incident,deviceId:canonicalDeviceId(incident.deviceId)}));
     return {currentUser:state.currentUser??null,users:state.users??seedUsers,devices:seedDevices,alarms,incidents,selectedAlarmId:state.selectedAlarmId??seedAlarms[0].id,theme:state.theme??'dark'};
   },
-  merge:(persisted,current)=>({...current,...persisted as Partial<NocState>,devices:seedDevices,toast:'',regionFilter:'',realtimeState:'connecting',unreadAlarmCount:0,activeDemoScenario:null,activeDemoIncidentId:''}),
+  merge:(persisted,current)=>({...current,...persisted as Partial<NocState>,devices:seedDevices,toast:'',regionFilter:'',realtimeState:'connecting',unreadAlarmCount:0,activeDemoScenario:null,activeDemoIncidentId:'',aiDiagnosis:null}),
 }));

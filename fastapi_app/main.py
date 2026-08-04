@@ -206,6 +206,55 @@ class AlarmInput(BaseModel):
     email: str | None = None
 
 
+class TeamsReportInput(BaseModel):
+    report_type: str = "initial"
+
+
+def build_ai_diagnosis(device_id: str, alarm: dict[str, Any] | None = None) -> dict[str, Any]:
+    alarm = alarm or alarm_for(device_id)
+    text = str(alarm.get("alarm", "")).lower()
+    status = str(alarm.get("status", "DOWN")).upper()
+    if status == "UP":
+        root_cause, confidence = "服務已恢復，持續觀察設備穩定度", 0.98
+        actions = ["確認告警已清除", "驗證上下游連線", "完成事件結報"]
+    elif "cpu" in text:
+        root_cause, confidence = "設備 CPU 資源耗盡或異常程序占用", 0.86
+        actions = ["確認高負載程序", "檢查近期設定變更", "必要時切換備援路徑"]
+    elif any(keyword in text for keyword in ("optical", "los", "fiber")):
+        root_cause, confidence = "上游光纖或光模組訊號異常", 0.91
+        actions = ["檢查介面光功率", "確認 SFP 模組狀態", "聯絡線路維運人員"]
+    else:
+        root_cause, confidence = "設備連線或上游介面異常", 0.82
+        actions = ["確認設備可達性", "檢查上游介面", "比對近期維護與設定變更"]
+    links = db_links()
+    affected: set[str] = set()
+    pending = [device_id]
+    while pending:
+        source = pending.pop()
+        for link in links:
+            if link["source"] == source and link["target"] not in affected:
+                affected.add(link["target"])
+                pending.append(link["target"])
+    return {"device_id": device_id, "root_cause": root_cause, "likely_cause": root_cause,
+            "confidence": confidence, "impacted_devices": sorted(affected),
+            "suggested_actions": actions, "recommendation": actions,
+            "generated_at": datetime.now(timezone.utc).isoformat()}
+
+
+def build_ai_timeline(device_id: str, alarm: dict[str, Any] | None = None) -> list[dict[str, str]]:
+    alarm = alarm or alarm_for(device_id)
+    diagnosis = build_ai_diagnosis(device_id, alarm)
+    timestamp = str(alarm.get("time") or datetime.now(timezone.utc).isoformat())
+    recovered = str(alarm.get("status", "")).upper() == "UP"
+    return [
+        {"stage": "Alarm", "actor": "Monitoring", "time": timestamp, "detail": str(alarm.get("alarm", "Alarm received"))},
+        {"stage": "AI Analysis", "actor": "AI Copilot", "time": diagnosis["generated_at"], "detail": diagnosis["root_cause"]},
+        {"stage": "Operator", "actor": "NOC Operator", "time": diagnosis["generated_at"], "detail": "確認告警並執行初步查測"},
+        {"stage": "Engineer", "actor": "Network Engineer", "time": diagnosis["generated_at"], "detail": "檢查設備與上游連線"},
+        {"stage": "Recovery", "actor": "Monitoring", "time": diagnosis["generated_at"], "detail": "服務已恢復" if recovered else "等待服務恢復"},
+    ]
+
+
 async def broadcast(message: dict[str, Any]) -> None:
     stale: list[WebSocket] = []
     for client in tuple(clients):
@@ -250,9 +299,11 @@ async def publish_alarm(alarm: AlarmInput) -> dict[str, Any]:
         statistics = dashboard_statistics(db)
         history_id = history.id
     latest_alarm = {"status": "ok", "alarm": data, "device_status": device_status}
+    ai_diagnosis = build_ai_diagnosis(alarm.device_id, data)
     await broadcast({
         "type": "alarm",
         "data": latest_alarm,
+        "ai_diagnosis": ai_diagnosis,
         "device_status": device_status,
         "dashboard": statistics,
         "history_id": history_id,
@@ -359,25 +410,55 @@ async def get_analysis(device_id: str) -> dict[str, Any]:
         "status": "ok",
         "device_id": device_id,
         "alarm": alarm,
-        "diagnosis": {
-            "likely_cause": alarm["alarm"],
-            "confidence": 0.92,
-            "recommendation": ["確認設備電源與管理介面", "檢查上游連線狀態"],
-        },
+        "diagnosis": build_ai_diagnosis(device_id, alarm),
         "maintenance": maintenance["maintenance"],
         "topology": topology,
     }
 
 
+@app.get("/api/ai/diagnosis/{device_id}")
+async def get_ai_diagnosis(device_id: str) -> dict[str, Any]:
+    canonical_id = DEVICE_ID_ALIASES.get(device_id, device_id)
+    if canonical_id not in db_devices():
+        return JSONResponse(status_code=404, content={"detail": "Device not found"})
+    return {"status": "ok", "diagnosis": build_ai_diagnosis(canonical_id)}
+
+
+@app.get("/api/ai/timeline/{device_id}")
+async def get_ai_timeline(device_id: str) -> dict[str, Any]:
+    canonical_id = DEVICE_ID_ALIASES.get(device_id, device_id)
+    if canonical_id not in db_devices():
+        return JSONResponse(status_code=404, content={"detail": "Device not found"})
+    return {"status": "ok", "device_id": canonical_id, "events": build_ai_timeline(canonical_id)}
+
+
+def teams_initial_report(device_id: str) -> tuple[str, dict[str, Any]]:
+    alarm = alarm_for(device_id)
+    diagnosis = build_ai_diagnosis(device_id, alarm)
+    impacted = "、".join(diagnosis["impacted_devices"]) or "目前未發現下游設備"
+    report = (
+        f"【NOC 網路事件初報】\n設備：{alarm.get('device_name', device_id)}（{device_id}）\n"
+        f"告警：{alarm.get('alarm')}\n狀態：{alarm.get('status')}\n"
+        f"AI 初判：{diagnosis['root_cause']}\n信心值：{round(diagnosis['confidence'] * 100)}%\n"
+        f"影響設備：{impacted}\n建議處置：{'；'.join(diagnosis['suggested_actions'])}"
+    )
+    return report, diagnosis
+
+
+@app.post("/api/ai/teams-report/{device_id}")
+async def generate_teams_report(device_id: str, payload: TeamsReportInput) -> dict[str, Any]:
+    canonical_id = DEVICE_ID_ALIASES.get(device_id, device_id)
+    if canonical_id not in db_devices():
+        return JSONResponse(status_code=404, content={"detail": "Device not found"})
+    report, diagnosis = teams_initial_report(canonical_id)
+    return {"status": "ok", "device_id": canonical_id, "report_type": payload.report_type,
+            "report": report, "diagnosis": diagnosis}
+
+
 @app.get("/api/report/{device_id}")
 async def get_report(device_id: str) -> dict[str, Any]:
     analysis = await get_analysis(device_id)
-    alarm = analysis["alarm"]
-    report = (
-        f"【事件初報】\n設備：{alarm['device_name']}（{device_id}）\n"
-        f"告警：{alarm['alarm']}\n狀態：{alarm['status']}\n"
-        f"初步研判：{analysis['diagnosis']['likely_cause']}"
-    )
+    report, _ = teams_initial_report(device_id)
     return {"status": "ok", "device_id": device_id, "report": report, "analysis": analysis}
 
 

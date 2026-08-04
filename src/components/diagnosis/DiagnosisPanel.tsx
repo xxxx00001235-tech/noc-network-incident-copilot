@@ -27,14 +27,16 @@ export function DiagnosisPanel({alarm,analysis,analysisState='idle',analysisErro
  const mock=diagnose(alarm);
  const apiDiagnosis=analysis?.diagnosis;
  const confidence=apiDiagnosis?Math.max(0,Math.min(100,Math.round(apiDiagnosis.confidence<=1?apiDiagnosis.confidence*100:apiDiagnosis.confidence))):mock.confidence;
- const recommendation=apiDiagnosis?(Array.isArray(apiDiagnosis.recommendation)?apiDiagnosis.recommendation.join(' → '):apiDiagnosis.recommendation):mock.steps.join(' → ');
- const rootCause=apiDiagnosis?.likely_cause||mock.rootCause;
- return <Card title="AI 模擬診斷" className="diagnosis">
+ const actions=apiDiagnosis?.suggested_actions||(Array.isArray(apiDiagnosis?.recommendation)?apiDiagnosis.recommendation:null)||mock.steps;
+ const rootCause=apiDiagnosis?.root_cause||apiDiagnosis?.likely_cause||mock.rootCause;
+ const impacted=apiDiagnosis?.impacted_devices||[];
+ return <Card title="AI Diagnosis Panel" className="diagnosis">
   {analysisState!=='idle'&&<div className={`api-state ${analysisState}`}>{analysisState==='loading'?<RefreshCw className="spin"/>:analysisState==='success'?<Check/>:<WifiOff/>}<span><b>{analysisState==='loading'?'AI 分析載入中':analysisState==='success'?'FastAPI AI 分析已同步':'FastAPI AI 分析無法載入'}</b><small>{analysisState==='error'?`${analysisError}，目前顯示原有模擬診斷。`:analysisState==='success'?`${analysis?.device_id} · 即時分析結果`:'正在分析選取設備…'}</small></span>{analysisState!=='loading'&&onRefresh&&<button className="btn small" onClick={onRefresh}><RefreshCw/>重新整理</button>}</div>}
-  <div className="ai-title"><BrainCircuit/><div><small>可能根本原因</small><strong>{rootCause}</strong></div></div>
+  <div className="ai-title"><BrainCircuit/><div><small>Likely Root Cause</small><strong>{rootCause}</strong></div></div>
   <div className="confidence"><span style={{width:`${confidence}%`}}/><b>{confidence}% 信心分數</b></div>
   <h3>判斷依據</h3><ol>{mock.evidence.map(x=><li key={x}>{x}</li>)}</ol>
-  <div className="callout"><ShieldAlert size={18}/><span><b>影響：</b>{mock.impact}<br/><b>建議：</b>{recommendation}</span></div>
+  <div className="root-cause-card"><small>Root Cause</small><strong>{rootCause}</strong><div><span><b>{confidence}%</b> Confidence</span><span><b>{impacted.length}</b> Impacted Devices</span></div>{impacted.length>0&&<p>{impacted.join('、')}</p>}</div>
+  <div className="callout"><ShieldAlert size={18}/><span><b>影響：</b>{mock.impact}<br/><b>Suggested Actions：</b>{actions.join(' → ')}</span></div>
   {mock.maintenanceLikely&&<div className="maintenance-note">此告警可能由既定維護作業造成，請先確認維護進度。</div>}
   <p className="disclaimer">此結果為模擬 AI 判斷，僅供展示與輔助參考。</p>
  </Card>

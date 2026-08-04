@@ -1,6 +1,7 @@
 import { fastApiBaseUrl } from '../lib/apiClient';
 import { normalizeFastApiAlarm, type FastApiAlarm, type LatestAlarmResponse } from './alarms';
 import type { Alarm } from '../types';
+import type { AnalysisDiagnosis } from './analysis';
 
 export type AlarmSocketState = 'connecting' | 'connected' | 'disconnected';
 
@@ -29,6 +30,7 @@ function parseAlarm(payload: unknown): Alarm | null {
 
 export function connectAlarmSocket(options: {
   onAlarm: (alarm: Alarm) => void;
+  onDiagnosis?: (diagnosis: AnalysisDiagnosis) => void;
   onState: (state: AlarmSocketState) => void;
 }) {
   let socket: WebSocket | null = null;
@@ -46,7 +48,10 @@ export function connectAlarmSocket(options: {
     };
     socket.onmessage = event => {
       try {
-        const alarm = parseAlarm(JSON.parse(String(event.data)));
+        const payload=JSON.parse(String(event.data)) as Record<string,unknown>;
+        const diagnosis=payload.ai_diagnosis as AnalysisDiagnosis|undefined;
+        if(diagnosis) options.onDiagnosis?.(diagnosis);
+        const alarm = parseAlarm(payload);
         if (alarm) options.onAlarm(alarm);
       } catch {
         // Ignore malformed frames; a later valid alarm must still be received.

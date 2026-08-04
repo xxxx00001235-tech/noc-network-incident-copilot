@@ -11,3 +11,7 @@ export interface ReportResponse {
 export function fetchReport(deviceId: string): Promise<ReportResponse> {
   return apiRequest<ReportResponse>(`/api/report/${encodeURIComponent(deviceId)}`);
 }
+
+export function generateTeamsReport(deviceId:string):Promise<ReportResponse>{
+  return apiRequest<ReportResponse>(`/api/ai/teams-report/${encodeURIComponent(deviceId)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report_type:'initial'})});
+}

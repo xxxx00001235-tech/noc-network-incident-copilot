@@ -29,10 +29,12 @@ export function AlarmRealtime() {
   const syncAlarm = useNocStore(state => state.syncAlarm);
   const receiveRealtimeAlarm = useNocStore(state => state.receiveRealtimeAlarm);
   const setRealtimeState = useNocStore(state => state.setRealtimeState);
+  const setAiDiagnosis = useNocStore(state => state.setAiDiagnosis);
   const seen = useRef(new Set<string>());
 
   useEffect(() => connectAlarmSocket({
     onState: setRealtimeState,
+    onDiagnosis:setAiDiagnosis,
     onAlarm: alarm => {
       const isNew = !seen.current.has(alarm.id);
       seen.current.add(alarm.id);
@@ -43,7 +45,7 @@ export function AlarmRealtime() {
         syncAlarm(alarm);
       }
     },
-  }), [receiveRealtimeAlarm, setRealtimeState, syncAlarm]);
+  }), [receiveRealtimeAlarm, setAiDiagnosis, setRealtimeState, syncAlarm]);
 
   useEffect(() => {
     const unlockAudio = () => {
