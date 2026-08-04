@@ -111,3 +111,31 @@ class DeviceHistoryResponse(BaseModel):
     actor_user_id: int | None
     actor: UserSummary | None = None
     created_at: datetime
+
+
+class DeviceStatusResponse(BaseModel):
+    device_id: str
+    status: DeviceStatus
+    updated_at: datetime
+
+
+class AlarmHistoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    device_id: str
+    alarm: str
+    status: str
+    severity: str
+    device_status: DeviceStatus
+    created_at: datetime
+
+
+class DashboardStatisticsResponse(BaseModel):
+    total_devices: int
+    normal_devices: int
+    incident_devices: int
+    maintenance_devices: int
+    unknown_devices: int
+    total_alarms: int
+    active_alarms: int
+    critical_alarms: int

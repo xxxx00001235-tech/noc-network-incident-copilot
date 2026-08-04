@@ -70,3 +70,21 @@ class DeviceHistory(Base):
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     actor: Mapped[User | None] = relationship(foreign_keys=[actor_user_id])
+
+
+class AlarmHistory(Base):
+    __tablename__ = "alarm_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    alarm: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    device_status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False, index=True
+    )
+    device: Mapped[Device] = relationship(foreign_keys=[device_id])

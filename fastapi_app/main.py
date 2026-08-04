@@ -11,10 +11,15 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from fastapi_app.database import Base, SessionLocal, engine
-from fastapi_app.models import Device, TopologyLink, User
+from fastapi_app.models import AlarmHistory, Device, TopologyLink, User
+from fastapi_app.schemas import (
+    AlarmHistoryResponse,
+    DashboardStatisticsResponse,
+    DeviceStatusResponse,
+)
 from fastapi_app.routers.devices import router as devices_router
 from fastapi_app.routers.users import router as users_router
 from fastapi_app.services import JWT_ALGORITHM, JWT_SECRET, create_initial_admin
@@ -147,6 +152,27 @@ def device_node(device_id: str) -> dict[str, Any]:
     return {"device_id": device_id, **details}
 
 
+def dashboard_statistics(db) -> dict[str, int]:
+    device_counts = dict(db.execute(select(Device.status, func.count()).group_by(Device.status)).all())
+    total_alarms = db.scalar(select(func.count(AlarmHistory.id))) or 0
+    active_alarms = db.scalar(
+        select(func.count(AlarmHistory.id)).where(func.upper(AlarmHistory.status) != "UP")
+    ) or 0
+    critical_alarms = db.scalar(
+        select(func.count(AlarmHistory.id)).where(func.lower(AlarmHistory.severity) == "critical")
+    ) or 0
+    return {
+        "total_devices": sum(device_counts.values()),
+        "normal_devices": device_counts.get("normal", 0),
+        "incident_devices": device_counts.get("incident", 0),
+        "maintenance_devices": device_counts.get("maintenance", 0),
+        "unknown_devices": device_counts.get("unknown", 0),
+        "total_alarms": total_alarms,
+        "active_alarms": active_alarms,
+        "critical_alarms": critical_alarms,
+    }
+
+
 def alarm_for(device_id: str) -> dict[str, Any]:
     if latest_alarm and latest_alarm["alarm"].get("device_id") == device_id:
         return latest_alarm["alarm"]
@@ -194,16 +220,71 @@ async def broadcast(message: dict[str, Any]) -> None:
 @app.post("/api/alarms", status_code=202)
 async def publish_alarm(alarm: AlarmInput) -> dict[str, Any]:
     global latest_alarm
-    devices = db_devices()
-    if alarm.device_id not in devices:
-        return JSONResponse(status_code=422, content={"detail": "Unknown device_id"})
-    data = alarm.model_dump()
-    device = devices[alarm.device_id]
-    data.update({"device_name": device["device_name"], "ip": device["ip"], "device_type": device["device_type"]})
-    data["time"] = data["time"] or datetime.now(timezone.utc).isoformat()
-    latest_alarm = {"status": "ok", "alarm": data}
-    await broadcast({"type": "alarm", "data": latest_alarm})
+    with SessionLocal() as db:
+        device = db.scalar(select(Device).where(Device.device_id == alarm.device_id))
+        if device is None:
+            return JSONResponse(status_code=422, content={"detail": "Unknown device_id"})
+        data = alarm.model_dump()
+        data.update({"device_name": device.device_name, "ip": device.ip, "device_type": device.device_type})
+        data["time"] = data["time"] or datetime.now(timezone.utc).isoformat()
+        device.status = "normal" if alarm.status.upper() == "UP" else "incident"
+        severity = alarm.severity or ("Normal" if device.status == "normal" else "Critical")
+        data["severity"] = severity
+        history = AlarmHistory(
+            device_id=device.device_id,
+            alarm=alarm.alarm,
+            status=alarm.status.upper(),
+            severity=severity,
+            device_status=device.status,
+            payload=json.dumps(data, ensure_ascii=False),
+        )
+        db.add(history)
+        db.commit()
+        db.refresh(device)
+        db.refresh(history)
+        device_status = {
+            "device_id": device.device_id,
+            "status": device.status,
+            "updated_at": device.updated_at.isoformat(),
+        }
+        statistics = dashboard_statistics(db)
+        history_id = history.id
+    latest_alarm = {"status": "ok", "alarm": data, "device_status": device_status}
+    await broadcast({
+        "type": "alarm",
+        "data": latest_alarm,
+        "device_status": device_status,
+        "dashboard": statistics,
+        "history_id": history_id,
+    })
     return {"status": "accepted", "connections": len(clients), "alarm": data}
+
+
+@app.get("/api/devices/{device_id}/status", response_model=DeviceStatusResponse)
+async def get_device_status(device_id: str) -> DeviceStatusResponse:
+    with SessionLocal() as db:
+        device = db.scalar(select(Device).where(Device.device_id == device_id))
+        if device is None:
+            return JSONResponse(status_code=404, content={"detail": "Device not found"})
+        return DeviceStatusResponse(
+            device_id=device.device_id, status=device.status, updated_at=device.updated_at
+        )
+
+
+@app.get("/api/alarms/history", response_model=list[AlarmHistoryResponse])
+async def get_alarm_history(device_id: str | None = None, limit: int = 100):
+    safe_limit = max(1, min(limit, 500))
+    with SessionLocal() as db:
+        query = select(AlarmHistory).order_by(AlarmHistory.created_at.desc(), AlarmHistory.id.desc())
+        if device_id:
+            query = query.where(AlarmHistory.device_id == device_id)
+        return list(db.scalars(query.limit(safe_limit)))
+
+
+@app.get("/api/dashboard/statistics", response_model=DashboardStatisticsResponse)
+async def get_dashboard_statistics() -> DashboardStatisticsResponse:
+    with SessionLocal() as db:
+        return DashboardStatisticsResponse(**dashboard_statistics(db))
 
 
 @app.get("/api/alarms/latest")
