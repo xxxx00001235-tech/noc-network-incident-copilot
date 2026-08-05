@@ -6,23 +6,27 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select, text
+from sqlalchemy.orm import selectinload
 
 from fastapi_app.database import Base, SessionLocal, engine
-from fastapi_app.models import AlarmHistory, Device, TopologyLink, User
+from fastapi_app.models import AlarmHistory, Device, Incident, Timeline, TopologyLink, User
 from fastapi_app.schemas import (
     AlarmHistoryResponse,
     DashboardStatisticsResponse,
     DeviceStatusResponse,
+    IncidentResponse,
+    IncidentUpdate,
 )
 from fastapi_app.routers.devices import router as devices_router
 from fastapi_app.routers.users import router as users_router
-from fastapi_app.services import JWT_ALGORITHM, JWT_SECRET, create_initial_admin
+from fastapi_app.services import JWT_ALGORITHM, JWT_SECRET, create_initial_admin, require_roles
 from jose import JWTError, jwt
 
 
@@ -119,7 +123,59 @@ def seed_devices(db) -> None:
     db.commit()
 
 
+def migrate_alarm_lifecycle_columns() -> None:
+    """Keep existing SQLite databases compatible with the incident lifecycle."""
+    columns = {column["name"] for column in inspect(engine).get_columns("alarm_history")}
+    statements = []
+    if "start_time" not in columns:
+        statements.append("ALTER TABLE alarm_history ADD COLUMN start_time DATETIME")
+    if "end_time" not in columns:
+        statements.append("ALTER TABLE alarm_history ADD COLUMN end_time DATETIME")
+    if "duration" not in columns:
+        statements.append("ALTER TABLE alarm_history ADD COLUMN duration INTEGER")
+    if statements:
+        with engine.begin() as connection:
+            for statement in statements:
+                connection.execute(text(statement))
+            connection.execute(text("UPDATE alarm_history SET start_time = created_at WHERE start_time IS NULL"))
+
+
+def migrate_account_incident_columns() -> None:
+    """Additive SQLite migration; ORM fields remain portable to PostgreSQL migrations."""
+    inspector = inspect(engine)
+    additions = {
+        "users": {
+            "employee_id": "VARCHAR(64)", "name": "VARCHAR(128)", "teams": "VARCHAR(255)",
+            "phone": "VARCHAR(64)", "department": "VARCHAR(128)", "last_login_at": "DATETIME",
+            "deleted_at": "DATETIME",
+        },
+        "incidents": {
+            "incident_id": "VARCHAR(64)", "alarm_type": "VARCHAR(255)", "severity": "VARCHAR(32)",
+            "acknowledged_time": "DATETIME", "recovered_time": "DATETIME", "closed_time": "DATETIME",
+            "duration_seconds": "INTEGER", "operator_id": "INTEGER", "engineer_id": "INTEGER",
+            "root_cause": "TEXT", "resolution": "TEXT",
+        },
+    }
+    with engine.begin() as connection:
+        for table_name, definitions in additions.items():
+            existing = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, sql_type in definitions.items():
+                if column_name not in existing:
+                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {sql_type}"))
+        connection.execute(text("UPDATE incidents SET incident_id = 'INC-' || printf('%06d', id) WHERE incident_id IS NULL"))
+        connection.execute(text("UPDATE incidents SET alarm_type = COALESCE((SELECT alarm FROM alarm_history WHERE alarm_history.id = incidents.alarm_history_id), 'Device alarm') WHERE alarm_type IS NULL"))
+        connection.execute(text("UPDATE incidents SET severity = COALESCE((SELECT severity FROM alarm_history WHERE alarm_history.id = incidents.alarm_history_id), 'Critical') WHERE severity IS NULL"))
+        incident_columns = {column["name"] for column in inspect(engine).get_columns("incidents")}
+        if "end_time" in incident_columns:
+            connection.execute(text("UPDATE incidents SET recovered_time = end_time WHERE recovered_time IS NULL AND end_time IS NOT NULL"))
+            connection.execute(text("UPDATE incidents SET closed_time = end_time WHERE closed_time IS NULL AND end_time IS NOT NULL"))
+        if "duration" in incident_columns:
+            connection.execute(text("UPDATE incidents SET duration_seconds = duration WHERE duration_seconds IS NULL AND duration IS NOT NULL"))
+
+
 Base.metadata.create_all(bind=engine)
+migrate_alarm_lifecycle_columns()
+migrate_account_incident_columns()
 with SessionLocal() as startup_db:
     create_initial_admin(startup_db)
     seed_devices(startup_db)
@@ -156,7 +212,7 @@ def dashboard_statistics(db) -> dict[str, int]:
     device_counts = dict(db.execute(select(Device.status, func.count()).group_by(Device.status)).all())
     total_alarms = db.scalar(select(func.count(AlarmHistory.id))) or 0
     active_alarms = db.scalar(
-        select(func.count(AlarmHistory.id)).where(func.upper(AlarmHistory.status) != "UP")
+        select(func.count(AlarmHistory.id)).where(func.upper(AlarmHistory.status) == "OPEN")
     ) or 0
     critical_alarms = db.scalar(
         select(func.count(AlarmHistory.id)).where(func.lower(AlarmHistory.severity) == "critical")
@@ -275,29 +331,71 @@ async def publish_alarm(alarm: AlarmInput) -> dict[str, Any]:
             return JSONResponse(status_code=422, content={"detail": "Unknown device_id"})
         data = alarm.model_dump()
         data.update({"device_name": device.device_name, "ip": device.ip, "device_type": device.device_type})
-        data["time"] = data["time"] or datetime.now(timezone.utc).isoformat()
-        device.status = "normal" if alarm.status.upper() == "UP" else "incident"
+        event_time = datetime.fromisoformat(alarm.time.replace("Z", "+00:00")) if alarm.time else datetime.now(timezone.utc)
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=timezone.utc)
+        data["time"] = event_time.isoformat()
+        recovered = alarm.status.upper() == "UP"
+        device.status = "normal" if recovered else "incident"
         severity = alarm.severity or ("Normal" if device.status == "normal" else "Critical")
         data["severity"] = severity
-        history = AlarmHistory(
-            device_id=device.device_id,
-            alarm=alarm.alarm,
-            status=alarm.status.upper(),
-            severity=severity,
-            device_status=device.status,
-            payload=json.dumps(data, ensure_ascii=False),
+        history = db.scalar(
+            select(AlarmHistory)
+            .where(AlarmHistory.device_id == device.device_id, AlarmHistory.status == "OPEN")
+            .order_by(AlarmHistory.start_time.desc(), AlarmHistory.id.desc())
         )
-        db.add(history)
+        if recovered and history is not None:
+            start_time = history.start_time
+            if start_time.tzinfo is None:
+                start_time = start_time.replace(tzinfo=timezone.utc)
+            history.status = "CLOSED"
+            history.end_time = event_time
+            history.duration = max(0, int((event_time - start_time).total_seconds()))
+            history.device_status = device.status
+            history.payload = json.dumps(data, ensure_ascii=False)
+            incident = db.scalar(select(Incident).where(Incident.alarm_history_id == history.id))
+            if incident is not None:
+                incident.status = "CLOSED"
+                incident.recovered_time = event_time
+                incident.closed_time = event_time
+                incident.duration_seconds = history.duration
+                db.add(Timeline(incident_id=incident.id, event_type="recovery", from_status="OPEN", to_status="RECOVERED", note="Device UP"))
+                db.add(Timeline(incident_id=incident.id, event_type="closure", from_status="RECOVERED", to_status="CLOSED", note="Incident automatically closed after recovery"))
+        elif not recovered and history is None:
+            history = AlarmHistory(
+                device_id=device.device_id, alarm=alarm.alarm, status="OPEN",
+                severity=severity, device_status=device.status,
+                payload=json.dumps(data, ensure_ascii=False), start_time=event_time,
+            )
+            db.add(history)
+            db.flush()
+            incident = Incident(
+                incident_id=f"INC-{uuid4().hex[:12].upper()}",
+                device_id=device.device_id, alarm_history_id=history.id,
+                alarm_type=alarm.alarm, severity=severity, status="OPEN", start_time=event_time,
+            )
+            db.add(incident)
+            db.flush()
+            db.add(Timeline(incident_id=incident.id, event_type="created", to_status="OPEN", note="Device DOWN"))
+        elif not recovered and history is not None:
+            history.alarm = alarm.alarm
+            history.severity = severity
+            history.payload = json.dumps(data, ensure_ascii=False)
+            incident = db.scalar(select(Incident).where(Incident.alarm_history_id == history.id))
+            if incident is not None:
+                incident.alarm_type = alarm.alarm
+                incident.severity = severity
         db.commit()
         db.refresh(device)
-        db.refresh(history)
+        if history is not None:
+            db.refresh(history)
         device_status = {
             "device_id": device.device_id,
             "status": device.status,
             "updated_at": device.updated_at.isoformat(),
         }
         statistics = dashboard_statistics(db)
-        history_id = history.id
+        history_id = history.id if history is not None else None
     latest_alarm = {"status": "ok", "alarm": data, "device_status": device_status}
     ai_diagnosis = build_ai_diagnosis(alarm.device_id, data)
     await broadcast({
@@ -330,6 +428,83 @@ async def get_alarm_history(device_id: str | None = None, limit: int = 100):
         if device_id:
             query = query.where(AlarmHistory.device_id == device_id)
         return list(db.scalars(query.limit(safe_limit)))
+
+
+def parse_query_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Dates must be ISO 8601") from exc
+    return parsed.replace(tzinfo=parsed.tzinfo or timezone.utc)
+
+
+def incident_query(device_id: str | None, status_value: str | None, date_from: str | None, date_to: str | None):
+    query = select(Incident).options(
+        selectinload(Incident.operator), selectinload(Incident.engineer),
+        selectinload(Incident.timeline).selectinload(Timeline.actor),
+    )
+    if device_id:
+        query = query.where(Incident.device_id == device_id)
+    if status_value:
+        query = query.where(Incident.status == status_value.upper())
+    if start := parse_query_datetime(date_from):
+        query = query.where(Incident.start_time >= start)
+    if end := parse_query_datetime(date_to):
+        query = query.where(Incident.start_time <= end)
+    return query.order_by(Incident.start_time.desc(), Incident.id.desc())
+
+
+@app.get("/api/incidents/active", response_model=list[IncidentResponse])
+async def get_active_incidents(device_id: str | None = None, status: str | None = None, date_from: str | None = None, date_to: str | None = None):
+    with SessionLocal() as db:
+        query = incident_query(device_id, status, date_from, date_to).where(
+            Incident.status.in_(("OPEN", "ACKNOWLEDGED", "IN_PROGRESS"))
+        )
+        return list(db.scalars(query))
+
+
+@app.get("/api/incidents/history", response_model=list[IncidentResponse])
+async def get_incident_history(device_id: str | None = None, status: str | None = None, date_from: str | None = None, date_to: str | None = None):
+    with SessionLocal() as db:
+        query = incident_query(device_id, status, date_from, date_to)
+        if status is None:
+            query = query.where(Incident.status.in_(("RECOVERED", "CLOSED")))
+        return list(db.scalars(query))
+
+
+@app.patch("/api/incidents/{incident_id}", response_model=IncidentResponse)
+async def update_incident(
+    incident_id: str, data: IncidentUpdate, db_user: User = Depends(require_roles("admin", "engineer", "operator")),
+):
+    transitions = {
+        "OPEN": {"ACKNOWLEDGED"}, "ACKNOWLEDGED": {"IN_PROGRESS"},
+        "IN_PROGRESS": {"RECOVERED"}, "RECOVERED": {"CLOSED"}, "CLOSED": set(),
+    }
+    with SessionLocal() as db:
+        incident = db.scalar(select(Incident).where(Incident.incident_id == incident_id))
+        if incident is None:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        if data.status != incident.status and data.status not in transitions[incident.status]:
+            raise HTTPException(status_code=409, detail=f"Invalid transition {incident.status} -> {data.status}")
+        previous = incident.status
+        values = data.model_dump(exclude={"status", "note"}, exclude_unset=True)
+        for key, value in values.items():
+            setattr(incident, key, value)
+        now = datetime.now(timezone.utc)
+        incident.status = data.status
+        if data.status == "ACKNOWLEDGED":
+            incident.acknowledged_time = now
+            incident.operator_id = incident.operator_id or db_user.id
+        elif data.status == "RECOVERED":
+            incident.recovered_time = now
+            incident.duration_seconds = max(0, int((now - incident.start_time.replace(tzinfo=incident.start_time.tzinfo or timezone.utc)).total_seconds()))
+        elif data.status == "CLOSED":
+            incident.closed_time = now
+        db.add(Timeline(incident_id=incident.id, event_type="status_change", from_status=previous, to_status=data.status, actor_user_id=db_user.id, note=data.note))
+        db.commit()
+        return db.scalar(incident_query(None, None, None, None).where(Incident.id == incident.id))
 
 
 @app.get("/api/dashboard/statistics", response_model=DashboardStatisticsResponse)

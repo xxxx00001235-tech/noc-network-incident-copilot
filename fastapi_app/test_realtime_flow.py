@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from fastapi_app.database import SessionLocal
 from fastapi_app.main import app
-from fastapi_app.models import AlarmHistory, Device
+from fastapi_app.models import AlarmHistory, Device, Incident
 
 
 client = TestClient(app)
@@ -81,3 +81,48 @@ def test_new_read_apis_keep_rbac() -> None:
         "/api/dashboard/statistics",
     ):
         assert client.get(path).status_code == 403
+
+
+def test_down_up_closes_same_incident_with_complete_timing() -> None:
+    down_time = "2026-08-05T01:00:00+00:00"
+    up_time = "2026-08-05T01:02:30+00:00"
+    down = client.post("/api/alarms", headers=HEADERS, json={
+        "device_id": DEVICE_ID, "device_name": "ignored", "alarm": "VM Device DOWN",
+        "status": "DOWN", "severity": "Critical", "time": down_time,
+    })
+    assert down.status_code == 202
+    duplicate = client.post("/api/alarms", headers=HEADERS, json={
+        "device_id": DEVICE_ID, "device_name": "ignored", "alarm": "VM Device DOWN",
+        "status": "DOWN", "severity": "Critical", "time": down_time,
+    })
+    assert duplicate.status_code == 202
+    active = client.get("/api/incidents/active", headers=HEADERS, params={"device_id": DEVICE_ID}).json()
+    assert len(active) == 1
+    incident_id = active[0]["incident_id"]
+
+    up = client.post("/api/alarms", headers=HEADERS, json={
+        "device_id": DEVICE_ID, "device_name": "ignored", "alarm": "VM Device UP",
+        "status": "UP", "severity": "Normal", "time": up_time,
+    })
+    assert up.status_code == 202
+
+    history = client.get(
+        "/api/alarms/history", headers=HEADERS, params={"device_id": DEVICE_ID, "limit": 1}
+    ).json()[0]
+    assert history["status"] == "CLOSED"
+    assert history["start_time"] == "2026-08-05T01:00:00Z"
+    assert history["end_time"] == "2026-08-05T01:02:30Z"
+    assert history["duration"] == 150
+    assert history["device_status"] == "normal"
+    assert client.get("/api/incidents/active", headers=HEADERS, params={"device_id": DEVICE_ID}).json() == []
+    incident_history = client.get("/api/incidents/history", headers=HEADERS, params={"device_id": DEVICE_ID}).json()
+    closed_incident = next(item for item in incident_history if item["incident_id"] == incident_id)
+    assert closed_incident["status"] == "CLOSED"
+    assert [event["to_status"] for event in closed_incident["timeline"]][-2:] == ["RECOVERED", "CLOSED"]
+
+    with SessionLocal() as db:
+        alarm_history = db.get(AlarmHistory, history["id"])
+        incident = db.scalar(select(Incident).where(Incident.alarm_history_id == alarm_history.id))
+        assert incident is not None
+        assert incident.status == "CLOSED"
+        assert incident.duration_seconds == 150

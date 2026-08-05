@@ -14,15 +14,22 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    employee_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(128))
+    teams: Mapped[str | None] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(64))
+    department: Mapped[str | None] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(16), default="operator", nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class Device(Base):
@@ -84,7 +91,54 @@ class AlarmHistory(Base):
     severity: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     device_status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     payload: Mapped[str] = mapped_column(Text, nullable=False)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )
     device: Mapped[Device] = relationship(foreign_keys=[device_id])
+
+
+class Incident(Base):
+    __tablename__ = "incidents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    incident_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    alarm_history_id: Mapped[int] = mapped_column(
+        ForeignKey("alarm_history.id", ondelete="CASCADE"), unique=True, nullable=False, index=True
+    )
+    alarm_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="OPEN", nullable=False, index=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acknowledged_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    recovered_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    operator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    engineer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    root_cause: Mapped[str | None] = mapped_column(Text)
+    resolution: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    operator: Mapped[User | None] = relationship(foreign_keys=[operator_id])
+    engineer: Mapped[User | None] = relationship(foreign_keys=[engineer_id])
+    timeline: Mapped[list["Timeline"]] = relationship(order_by="Timeline.created_at", cascade="all, delete-orphan")
+
+
+class Timeline(Base):
+    __tablename__ = "incident_timeline"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    incident_id: Mapped[int] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(16))
+    to_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    actor: Mapped[User | None] = relationship(foreign_keys=[actor_user_id])

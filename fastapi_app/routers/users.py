@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from datetime import datetime, timezone
+
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User
+from ..models import DeviceHistory, Incident, Timeline, User
 from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserCreate, UserResponse, UserUpdate
 from ..services import create_access_token, find_user, get_current_user, hash_password, require_roles, verify_password
 
@@ -28,10 +30,9 @@ def commit_user(db: Session, user: User) -> User:
 def register(data: RegisterRequest, db: Session = Depends(get_db)) -> User:
     if find_user(db, data.username) or find_user(db, str(data.email)):
         raise HTTPException(status_code=409, detail="Username or email already exists")
-    return commit_user(db, User(
-        username=data.username, email=str(data.email).lower(), password_hash=hash_password(data.password),
-        role="operator", status="pending",
-    ))
+    values = data.model_dump(exclude={"password"})
+    values["email"] = str(data.email).lower()
+    return commit_user(db, User(**values, password_hash=hash_password(data.password), role="operator", status="pending"))
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -41,6 +42,9 @@ def login(data: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
         raise HTTPException(status_code=401, detail="Invalid username/email or password")
     if user.status != "approved":
         raise HTTPException(status_code=403, detail=f"Account is {user.status}")
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
     return TokenResponse(access_token=create_access_token(user), user=UserResponse.model_validate(user))
 
 
@@ -50,16 +54,28 @@ def me(user: User = Depends(get_current_user)) -> User:
 
 
 @router.get("/users", response_model=list[UserResponse])
-def list_users(db: Session = Depends(get_db), _: User = Depends(admin_only)) -> list[User]:
-    return list(db.scalars(select(User).order_by(User.id)))
+def list_users(
+    q: str | None = None, role: str | None = None, status_filter: str | None = Query(default=None, alias="status"),
+    include_deleted: bool = False, db: Session = Depends(get_db), _: User = Depends(admin_only),
+) -> list[User]:
+    query = select(User)
+    if not include_deleted:
+        query = query.where(User.deleted_at.is_(None))
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.where(or_(User.username.ilike(term), User.email.ilike(term), User.name.ilike(term), User.employee_id.ilike(term)))
+    if role:
+        query = query.where(User.role == role)
+    if status_filter:
+        query = query.where(User.status == status_filter)
+    return list(db.scalars(query.order_by(User.id)))
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(data: UserCreate, db: Session = Depends(get_db), _: User = Depends(admin_only)) -> User:
-    return commit_user(db, User(
-        username=data.username, email=str(data.email).lower(), password_hash=hash_password(data.password),
-        role=data.role, status=data.status,
-    ))
+    values = data.model_dump(exclude={"password"})
+    values["email"] = str(data.email).lower()
+    return commit_user(db, User(**values, password_hash=hash_password(data.password)))
 
 
 @router.get("/users/pending", response_model=list[UserResponse])
@@ -100,6 +116,16 @@ def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depen
         raise HTTPException(status_code=404, detail="User not found")
     if user.id == admin.id:
         raise HTTPException(status_code=400, detail="Administrators cannot delete their own account")
+    has_history = any((
+        db.scalar(select(Incident.id).where(or_(Incident.operator_id == user.id, Incident.engineer_id == user.id)).limit(1)),
+        db.scalar(select(Timeline.id).where(Timeline.actor_user_id == user.id).limit(1)),
+        db.scalar(select(DeviceHistory.id).where(DeviceHistory.actor_user_id == user.id).limit(1)),
+    ))
+    if has_history:
+        user.status = "disabled"
+        user.deleted_at = datetime.now(timezone.utc)
+        db.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"X-Delete-Mode": "soft"})
     db.delete(user)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -121,3 +147,18 @@ def approve_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(
 @router.post("/admin/users/{user_id}/reject", response_model=UserResponse)
 def reject_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin_only)) -> User:
     return set_status(user_id, "rejected", db)
+
+
+@router.post("/admin/users/{user_id}/disable", response_model=UserResponse)
+def disable_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin_only)) -> User:
+    return set_status(user_id, "disabled", db)
+
+
+@router.post("/admin/users/{user_id}/restore", response_model=UserResponse)
+def restore_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(admin_only)) -> User:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.status = "approved"
+    user.deleted_at = None
+    return commit_user(db, user)

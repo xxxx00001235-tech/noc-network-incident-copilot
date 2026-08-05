@@ -4,7 +4,9 @@ from fastapi.testclient import TestClient
 
 from fastapi_app.database import SessionLocal
 from fastapi_app.main import app
-from fastapi_app.models import User
+from sqlalchemy import select
+
+from fastapi_app.models import Incident, User
 from fastapi_app.services import create_access_token, hash_password
 
 
@@ -48,6 +50,7 @@ def test_registration_approval_login_me_and_roles() -> None:
         "username": f"operator-{suffix}", "password": "OperatorPass123!",
     })
     assert login.status_code == 200
+    assert login.json()["user"]["last_login_at"] is not None
     operator_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     assert client.get("/api/me", headers=operator_headers).json()["username"] == f"operator-{suffix}"
     assert client.get("/api/users", headers=operator_headers).status_code == 403
@@ -67,3 +70,26 @@ def test_registration_approval_login_me_and_roles() -> None:
     with SessionLocal() as db:
         db.query(User).filter(User.id.in_([admin_id, registered["id"], engineer_id])).delete(synchronize_session=False)
         db.commit()
+
+
+def test_user_with_incident_is_soft_deleted_and_history_identity_remains() -> None:
+    suffix = uuid4().hex[:8]
+    with SessionLocal() as db:
+        admin = User(username=f"delete-admin-{suffix}", email=f"delete-admin-{suffix}@example.com", password_hash=hash_password("AdminPass123!"), role="admin", status="approved")
+        operator = User(username=f"history-user-{suffix}", email=f"history-user-{suffix}@example.com", password_hash=hash_password("OperatorPass123!"), role="operator", status="approved")
+        db.add_all((admin, operator)); db.commit(); db.refresh(admin); db.refresh(operator)
+        token = create_access_token(admin)
+        incident = db.scalar(select(Incident).order_by(Incident.id.desc()))
+        assert incident is not None
+        incident.operator_id = operator.id
+        db.commit()
+        operator_id = operator.id
+
+    response = client.delete(f"/api/users/{operator_id}", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 204
+    assert response.headers["X-Delete-Mode"] == "soft"
+    with SessionLocal() as db:
+        deleted = db.get(User, operator_id)
+        assert deleted is not None and deleted.status == "disabled" and deleted.deleted_at is not None
+        linked = db.scalar(select(Incident).where(Incident.operator_id == operator_id))
+        assert linked is not None and linked.operator.username == f"history-user-{suffix}"

@@ -1,19 +1,25 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 Role = Literal["admin", "engineer", "operator"]
-Status = Literal["pending", "approved", "rejected"]
+Status = Literal["pending", "approved", "rejected", "disabled"]
+IncidentStatus = Literal["OPEN", "ACKNOWLEDGED", "IN_PROGRESS", "RECOVERED", "CLOSED"]
 DeviceStatus = Literal["normal", "incident", "maintenance", "unknown"]
 DeviceLayer = Literal["Core", "Distribution", "Access"]
 
 
 class RegisterRequest(BaseModel):
+    employee_id: str | None = Field(default=None, max_length=64)
     username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     email: EmailStr
     password: str = Field(min_length=8, max_length=72)
+    name: str | None = Field(default=None, max_length=128)
+    teams: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=64)
+    department: str | None = Field(default=None, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -27,23 +33,35 @@ class UserCreate(RegisterRequest):
 
 
 class UserUpdate(BaseModel):
+    employee_id: str | None = Field(default=None, max_length=64)
     username: str | None = Field(default=None, min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     email: EmailStr | None = None
     password: str | None = Field(default=None, min_length=8, max_length=72)
     role: Role | None = None
     status: Status | None = None
+    name: str | None = Field(default=None, max_length=128)
+    teams: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=64)
+    department: str | None = Field(default=None, max_length=128)
 
 
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    employee_id: str | None
     username: str
     email: EmailStr
     role: Role
     status: Status
+    name: str | None
+    teams: str | None
+    phone: str | None
+    department: str | None
     created_at: datetime
     updated_at: datetime
+    last_login_at: datetime | None
+    deleted_at: datetime | None
 
 
 class TokenResponse(BaseModel):
@@ -127,7 +145,17 @@ class AlarmHistoryResponse(BaseModel):
     status: str
     severity: str
     device_status: DeviceStatus
+    start_time: datetime
+    end_time: datetime | None
+    duration: int | None
     created_at: datetime
+
+    @field_validator("start_time", "end_time", mode="after")
+    @classmethod
+    def attach_utc_to_sqlite_datetimes(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class DashboardStatisticsResponse(BaseModel):
@@ -139,3 +167,54 @@ class DashboardStatisticsResponse(BaseModel):
     total_alarms: int
     active_alarms: int
     critical_alarms: int
+
+
+class IncidentUserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    username: str
+    name: str | None
+
+
+class TimelineResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    event_type: str
+    from_status: str | None
+    to_status: str
+    actor_user_id: int | None
+    actor: IncidentUserResponse | None
+    note: str | None
+    created_at: datetime
+
+
+class IncidentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    incident_id: str
+    device_id: str
+    alarm_type: str
+    severity: str
+    status: IncidentStatus
+    start_time: datetime
+    acknowledged_time: datetime | None
+    recovered_time: datetime | None
+    closed_time: datetime | None
+    duration_seconds: int | None
+    operator_id: int | None
+    engineer_id: int | None
+    operator: IncidentUserResponse | None
+    engineer: IncidentUserResponse | None
+    root_cause: str | None
+    resolution: str | None
+    created_at: datetime
+    updated_at: datetime
+    timeline: list[TimelineResponse] = []
+
+
+class IncidentUpdate(BaseModel):
+    status: IncidentStatus
+    operator_id: int | None = None
+    engineer_id: int | None = None
+    root_cause: str | None = None
+    resolution: str | None = None
+    note: str | None = None
