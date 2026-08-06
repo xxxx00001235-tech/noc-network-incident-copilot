@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, inspect, select, text
 from sqlalchemy.orm import selectinload
 
-from fastapi_app.database import Base, SessionLocal, engine
+from fastapi_app.database import Base, IS_SQLITE, SessionLocal, engine
 from fastapi_app.models import AlarmHistory, Device, Incident, Timeline, TopologyLink, User
 from fastapi_app.schemas import (
     AlarmHistoryResponse,
@@ -173,9 +173,11 @@ def migrate_account_incident_columns() -> None:
             connection.execute(text("UPDATE incidents SET duration_seconds = duration WHERE duration_seconds IS NULL AND duration IS NOT NULL"))
 
 
-Base.metadata.create_all(bind=engine)
-migrate_alarm_lifecycle_columns()
-migrate_account_incident_columns()
+if IS_SQLITE:
+    # Local fallback compatibility only. PostgreSQL schema is managed by Alembic.
+    Base.metadata.create_all(bind=engine)
+    migrate_alarm_lifecycle_columns()
+    migrate_account_incident_columns()
 with SessionLocal() as startup_db:
     create_initial_admin(startup_db)
     seed_devices(startup_db)

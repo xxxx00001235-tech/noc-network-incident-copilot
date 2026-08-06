@@ -130,6 +130,20 @@ Dashboard、告警中心與拓樸共用同一份即時狀態。Critical／Major 
 python -m pip install -r fastapi_app/requirements.txt
 python -m uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000
 ```
+
+### FastAPI PostgreSQL
+
+FastAPI 預設使用 `sqlite:///./fastapi_app/noc.db` 作為本機備援。正式 PostgreSQL
+環境請設定 `DATABASE_URL`，先執行 Alembic，再啟動服務：
+
+```bash
+export DATABASE_URL='postgresql+psycopg://noc_user:noc_password@localhost:5432/noc_copilot'
+alembic upgrade head
+python scripts/migrate_sqlite_to_postgresql.py --target "$DATABASE_URL"
+python -m uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000
+```
+
+完整建立、搬移、驗證與回復 SQLite 步驟請見 `docs/database-migration.md`。
 ## 本機唯讀監控（期末版本第一階段）
 
 公開網站預設維持 `demo` 模式，不會讀取使用者的電腦。若要在目前這台
