@@ -30,6 +30,9 @@ jobs:
         run: npm install
 
       - name: Build
+        env:
+          VITE_FASTAPI_BASE_URL: ${{ vars.NOC_API_BASE_URL }}
+          VITE_API_BASE_URL: ${{ vars.NOC_MONITOR_API_BASE_URL }}
         run: npm run build
 
       - name: Configure Pages
