@@ -21,6 +21,17 @@ export interface LatestAlarmResponse {
   alarm: FastApiAlarm;
 }
 
+export interface PostgresAlarm {
+  id: number;
+  hostname: string;
+  site: string;
+  device_name: string;
+  severity: string;
+  status: string;
+  message: string;
+  created_at: string;
+}
+
 function normalizeSeverity(value: string | undefined, status: string): Severity {
   const severity = value?.toLowerCase();
   if (severity === 'critical') return 'Critical';
@@ -42,6 +53,41 @@ function locationParts(location = '') {
 export async function fetchLatestAlarm(): Promise<Alarm> {
   const response = await apiRequest<LatestAlarmResponse>('/api/alarms/latest');
   return normalizeFastApiAlarm(response);
+}
+
+export async function fetchAlarms(): Promise<Alarm[]> {
+  const response = await apiRequest<PostgresAlarm[]>('/alarms', {
+    // The Vite proxy avoids a CORS dependency in local development.
+    baseUrl: import.meta.env.DEV ? '' : undefined,
+  });
+  return response.map(normalizePostgresAlarm);
+}
+
+export function normalizePostgresAlarm(source: PostgresAlarm): Alarm {
+  const createdAt = new Date(source.created_at);
+  const timestamp = Number.isNaN(createdAt.getTime())
+    ? source.created_at
+    : createdAt.toLocaleString('zh-TW');
+  const id = `ALM-${String(source.id).padStart(6, '0')}`;
+
+  return {
+    id,
+    time: timestamp,
+    severity: normalizeSeverity(source.severity, source.status),
+    region: source.site,
+    site: source.site,
+    deviceId: source.hostname,
+    deviceName: source.device_name,
+    ip: '—',
+    deviceType: source.device_name,
+    content: source.message,
+    source: 'FastAPI GET /alarms (PostgreSQL)',
+    status: source.status,
+    owner: '未指派',
+    maintenance: false,
+    updated: timestamp,
+    incidentId: `INC-${id}`,
+  };
 }
 
 export function normalizeFastApiAlarm(response: LatestAlarmResponse): Alarm {

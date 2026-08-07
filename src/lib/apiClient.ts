@@ -37,14 +37,14 @@ function setBackendAvailable(available: boolean, reason?: unknown) {
 export function isBackendAvailable() { return backendAvailable; }
 export function reportBackendUnavailable(reason?: unknown) { setBackendAvailable(false, reason); }
 
-type RequestOptions = RequestInit & { timeoutMs?: number };
+type RequestOptions = RequestInit & { timeoutMs?: number; baseUrl?: string };
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   if (!resolvedFastApiBaseUrl) {
     setBackendAvailable(false);
     return Promise.reject(new ApiError(demoSafeModeMessage));
   }
-  const { timeoutMs = 8000, signal, headers, ...requestInit } = options;
+  const { timeoutMs = 8000, signal, headers, baseUrl = fastApiBaseUrl, ...requestInit } = options;
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   const abortRequest = () => controller.abort();
@@ -53,7 +53,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     let role = 'operator';
     try { role = JSON.parse(localStorage.getItem('noc-copilot-state') || '{}')?.state?.currentUser?.role || role; } catch { /* least privilege */ }
     const token = localStorage.getItem('noc-access-token');
-    const response = await fetch(`${fastApiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`, {
+    const response = await fetch(`${baseUrl}${path.startsWith('/') ? path : `/${path}`}`, {
       ...requestInit,
       headers: { Accept: 'application/json', 'X-NOC-Role': role, ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers },
       cache: 'no-store', signal: controller.signal,
