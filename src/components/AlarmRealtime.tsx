@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { connectAlarmSocket } from '../api/alarmSocket';
+import { alarmListRefreshEvent, connectAlarmSocket } from '../api/alarmSocket';
 import { fetchLatestAlarm } from '../api/alarms';
 import { useNocStore } from '../store/useNocStore';
 import type { Alarm } from '../types';
@@ -35,6 +35,7 @@ export function AlarmRealtime() {
   useEffect(() => connectAlarmSocket({
     onState: setRealtimeState,
     onDiagnosis:setAiDiagnosis,
+    onAlarmChange: () => window.dispatchEvent(new Event(alarmListRefreshEvent)),
     onAlarm: alarm => {
       const isNew = !seen.current.has(alarm.id);
       seen.current.add(alarm.id);

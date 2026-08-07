@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+websockets>=15,<18
 sqlalchemy
 psycopg[binary]
 alembic

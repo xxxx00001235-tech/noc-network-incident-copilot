@@ -1,9 +1,10 @@
-import { demoSafeModeMessage, fastApiBaseUrl, isBackendAvailable, reportBackendUnavailable } from '../lib/apiClient';
+import { demoSafeModeMessage, fastApiBaseUrl, reportBackendUnavailable } from '../lib/apiClient';
 import { normalizeFastApiAlarm, type FastApiAlarm, type LatestAlarmResponse } from './alarms';
 import type { Alarm } from '../types';
 import type { AnalysisDiagnosis } from './analysis';
 
-export type AlarmSocketState = 'connecting' | 'connected' | 'disconnected';
+export type AlarmSocketState = 'connecting' | 'connected' | 'disconnected' | 'error';
+export const alarmListRefreshEvent = 'noc-alarm-list-refresh';
 
 function socketUrl() {
   const base = new URL(fastApiBaseUrl, window.location.href);
@@ -29,8 +30,16 @@ function parseAlarm(payload: unknown): Alarm | null {
   } satisfies LatestAlarmResponse);
 }
 
+function isAlarmChangeMessage(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return false;
+  const type = String((payload as Record<string, unknown>).type ?? '');
+  const normalized = type.toLowerCase().replace(/[\s_.-]/g, '');
+  return ['alarm', 'alarmchange', 'alarmchanged', 'alarmcreate', 'alarmcreated', 'alarmupdate', 'alarmupdated'].includes(normalized);
+}
+
 export function connectAlarmSocket(options: {
   onAlarm: (alarm: Alarm) => void;
+  onAlarmChange?: () => void;
   onDiagnosis?: (diagnosis: AnalysisDiagnosis) => void;
   onState: (state: AlarmSocketState) => void;
 }) {
@@ -39,30 +48,38 @@ export function connectAlarmSocket(options: {
   let retryCount = 0;
   let stopped = false;
 
-  const connect = () => {
+  const scheduleReconnect = () => {
+    if (stopped || retryTimer) return;
+    options.onState('disconnected');
+    const delay = Math.min(30_000, 1_000 * 2 ** Math.min(retryCount++, 5));
+    retryTimer = window.setTimeout(() => {
+      retryTimer = 0;
+      connect();
+    }, delay);
+  };
+
+  function connect() {
     if (stopped) return;
-    if (!isBackendAvailable()) {
-      options.onState('disconnected');
-      console.warn(demoSafeModeMessage);
-      return;
-    }
     options.onState('connecting');
     const url = socketUrl();
     if (!url) {
-      options.onState('disconnected');
+      options.onState('error');
       console.warn(demoSafeModeMessage);
       return;
     }
     try {
       socket = new WebSocket(url);
     } catch (error) {
-      options.onState('disconnected');
+      options.onState('error');
       reportBackendUnavailable(error);
+      scheduleReconnect();
       return;
     }
     socket.onopen = () => {
       retryCount = 0;
       options.onState('connected');
+      // Re-read PostgreSQL after every (re)connect to catch events missed offline.
+      options.onAlarmChange?.();
     };
     socket.onmessage = event => {
       try {
@@ -71,21 +88,22 @@ export function connectAlarmSocket(options: {
         if(diagnosis) options.onDiagnosis?.(diagnosis);
         const alarm = parseAlarm(payload);
         if (alarm) options.onAlarm(alarm);
+        if (isAlarmChangeMessage(payload)) options.onAlarmChange?.();
       } catch {
         // Ignore malformed frames; a later valid alarm must still be received.
       }
     };
     socket.onclose = () => {
       if (stopped) return;
-      options.onState('disconnected');
-      const delay = Math.min(30_000, 1_000 * 2 ** Math.min(retryCount++, 5));
-      retryTimer = window.setTimeout(connect, delay);
+      socket = null;
+      scheduleReconnect();
     };
     socket.onerror = event => {
+      options.onState('error');
       reportBackendUnavailable(event);
       socket?.close();
     };
-  };
+  }
 
   connect();
   return () => {

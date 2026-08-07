@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 
 from app.api.alarm import router as alarm_router
+from app.api.realtime import router as realtime_router
 
 
 app = FastAPI(title="NOC Backend")
 app.include_router(alarm_router)
+app.include_router(realtime_router)
 
 
 @app.get("/")
