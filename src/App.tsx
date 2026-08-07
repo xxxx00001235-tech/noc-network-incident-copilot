@@ -3,19 +3,16 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { ErrorBoundary, PageSkeleton } from './components/common/UI';
 import { LoginPage, RegisterPage } from './pages/AuthPages';
-import { DiagnosisPage } from './pages/OperationsPages';
-import { IncidentDatabasePage as IncidentsPage } from './pages/IncidentDatabasePage';
-import { DevicesPage, LabPage, RegionMapPage, WallboardPage } from './pages/PlatformPages';
-import { RbacPage, RbacPage as AccountsPage } from './pages/RbacPage';
+import { AlarmPage, DiagnosisPage, IncidentsPage } from './pages/OperationsPages';
+import { DevicesPage, LabPage, RegionMapPage, SettingsPage, TopologyPage, WallboardPage } from './pages/PlatformPages';
+import { RbacPage as AccountsPage } from './pages/RbacPage';
 import { useNocStore } from './store/useNocStore';
 import { hasPermission, routePermissions, type Permission } from './auth/rbac';
 import { BackendStatusBanner } from './components/BackendStatusBanner';
 
 const DashboardPage=lazy(()=>import('./pages/DashboardPage').then(m=>({default:m.DashboardPage})));
-const AlarmPage=lazy(()=>import('./pages/OperationsPages').then(m=>({default:m.AlarmPage})));
-const TopologyPage=lazy(()=>import('./pages/PlatformPages').then(m=>({default:m.TopologyPage})));
 function Protected(){return useNocStore(s=>s.currentUser)?<AppShell/>:<Navigate to="/login" replace/>}
 function Allowed({permission,children}:{permission:Permission;children:React.ReactNode}){const role=useNocStore(s=>s.currentUser?.role);return hasPermission(role,permission)?children:<Navigate to="/forbidden" replace/>}
 const guard=(path:string,page:React.ReactNode)=><Allowed permission={routePermissions[path]}>{page}</Allowed>;
 function Forbidden(){return <div className="page"><div className="page-title"><div><span className="eyebrow">403 FORBIDDEN</span><h1>沒有存取權限</h1><p>目前角色沒有此頁面的操作權限。</p></div></div></div>}
-export default function App(){return <ErrorBoundary><BackendStatusBanner/><Suspense fallback={<PageSkeleton/>}><Routes><Route path="/login" element={<LoginPage/>}/><Route path="/register" element={<RegisterPage/>}/><Route element={<Protected/>}><Route path="/dashboard" element={guard('/dashboard',<DashboardPage/>)}/><Route path="/alarms" element={guard('/alarms',<AlarmPage/>)}/><Route path="/incidents" element={guard('/incidents',<IncidentsPage/>)}/><Route path="/topology" element={guard('/topology',<TopologyPage/>)}/><Route path="/map" element={guard('/map',<RegionMapPage/>)}/><Route path="/diagnosis" element={guard('/diagnosis',<DiagnosisPage/>)}/><Route path="/lab" element={guard('/lab',<LabPage/>)}/><Route path="/wallboard" element={guard('/wallboard',<WallboardPage/>)}/><Route path="/devices" element={guard('/devices',<DevicesPage/>)}/><Route path="/accounts" element={guard('/accounts',<AccountsPage/>)}/><Route path="/settings" element={guard('/settings',<RbacPage/>)}/><Route path="/forbidden" element={<Forbidden/>}/></Route><Route path="*" element={<Navigate to="/dashboard" replace/>}/></Routes></Suspense></ErrorBoundary>}
+export default function App(){return <ErrorBoundary><BackendStatusBanner/><Suspense fallback={<PageSkeleton/>}><Routes><Route path="/login" element={<LoginPage/>}/><Route path="/register" element={<RegisterPage/>}/><Route element={<Protected/>}><Route path="/dashboard" element={guard('/dashboard',<DashboardPage/>)}/><Route path="/alarms" element={guard('/alarms',<AlarmPage/>)}/><Route path="/incidents" element={guard('/incidents',<IncidentsPage/>)}/><Route path="/topology" element={guard('/topology',<TopologyPage/>)}/><Route path="/map" element={guard('/map',<RegionMapPage/>)}/><Route path="/diagnosis" element={guard('/diagnosis',<DiagnosisPage/>)}/><Route path="/lab" element={guard('/lab',<LabPage/>)}/><Route path="/wallboard" element={guard('/wallboard',<WallboardPage/>)}/><Route path="/devices" element={guard('/devices',<DevicesPage/>)}/><Route path="/accounts" element={guard('/accounts',<AccountsPage/>)}/><Route path="/settings" element={guard('/settings',<SettingsPage/>)}/><Route path="/forbidden" element={<Forbidden/>}/></Route><Route path="*" element={<Navigate to="/dashboard" replace/>}/></Routes></Suspense></ErrorBoundary>}
