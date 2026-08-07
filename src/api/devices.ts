@@ -1,5 +1,6 @@
 import { apiRequest } from '../lib/apiClient';
-import type { DeviceStatus } from '../types';
+import type { Device, DeviceStatus } from '../types';
+import { canonicalDeviceId, deviceById, primaryDeviceIds } from '../data/inventory';
 
 export type DeviceLayer = 'Core' | 'Distribution' | 'Access';
 export interface DeviceOwner { id:number; username:string; email:string }
@@ -12,6 +13,24 @@ export interface ApiDevice {
 }
 export type DeviceInput = Omit<ApiDevice, 'id'|'owner'|'backup_owner'|'created_at'|'updated_at'>;
 export interface DeviceFilters { keyword?:string; region?:string; status?:string; device_type?:string }
+
+const retiredPresentationIds=new Set(['internet','RTR-TP-NG-BACKUP-001','SW-NG-DIST-01','SW-NG-DIST-02','AP-NG-01','SW-TY-001']);
+
+export function apiDeviceToDevice(device:ApiDevice):Device {
+  const id=canonicalDeviceId(device.device_id);
+  const inventoryDevice=deviceById.get(id);
+  return {
+    id,name:device.device_name,ip:device.ip,type:device.device_type,layer:device.layer,
+    region:device.region,site:device.site,location:device.location??undefined,status:device.status,
+    alarms:0,owner:device.owner?.username,ownerUserId:device.owner_user_id,
+    backupOwnerUserId:device.backup_owner_user_id,description:device.description??undefined,
+    upstream:inventoryDevice?.upstream,downstream:inventoryDevice?.downstream??[],backup:inventoryDevice?.backup,
+  };
+}
+
+export function presentationDevices(devices:ApiDevice[]) {
+  return devices.filter(device=>primaryDeviceIds.has(canonicalDeviceId(device.device_id))||!retiredPresentationIds.has(device.device_id));
+}
 
 export function fetchDevices(filters:DeviceFilters={}):Promise<ApiDevice[]> {
   const query=new URLSearchParams();

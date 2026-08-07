@@ -53,6 +53,25 @@ def create_initial_admin(db: Session) -> None:
     db.commit()
 
 
+def create_local_users(db: Session) -> None:
+    """Bootstrap authenticated local Compose users only when explicitly enabled."""
+    if os.getenv("NOC_BOOTSTRAP_LOCAL_USERS", "false").lower() not in {"1", "true", "yes"}:
+        return
+    password = os.getenv("NOC_LOCAL_USER_PASSWORD")
+    if not password or len(password) < 8:
+        return
+    for username, role in (("operator", "operator"), ("engineer", "engineer"), ("admin", "admin")):
+        user = find_user(db, username)
+        if user is None:
+            db.add(User(username=username, email=f"{username}@example.com", password_hash=hash_password(password), role=role, status="approved"))
+        else:
+            user.email = f"{username}@example.com"
+            user.password_hash = hash_password(password)
+            user.role = role
+            user.status = "approved"
+    db.commit()
+
+
 def find_user(db: Session, identity: str) -> User | None:
     return db.scalar(select(User).where(or_(User.username == identity, User.email == identity)))
 

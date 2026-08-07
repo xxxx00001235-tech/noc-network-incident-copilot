@@ -15,6 +15,9 @@ export interface AlarmHistoryEntry {
   status: string;
   severity: string;
   device_status: DeviceStatus;
+  start_time: string;
+  end_time: string | null;
+  duration: number | null;
   created_at: string;
 }
 

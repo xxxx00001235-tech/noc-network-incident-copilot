@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -98,6 +98,20 @@ class AlarmHistory(Base):
         DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )
     device: Mapped[Device] = relationship(foreign_keys=[device_id])
+
+
+class CurrentAlarm(Base):
+    """Current PostgreSQL alarm feed exposed by GET /alarms."""
+    __tablename__ = "alarms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    site: Mapped[str] = mapped_column(String(255), nullable=False)
+    device_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    severity: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Incident(Base):

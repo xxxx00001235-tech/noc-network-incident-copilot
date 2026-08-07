@@ -5,27 +5,27 @@ from app.database import SessionLocal
 from app.models.alarm import Alarm
 
 
-DEMO_ALARMS = (
+INITIAL_ALARMS = (
     {
-        "hostname": "TP-CORE-01",
-        "site": "Taipei",
-        "device_name": "Core Router",
+        "hostname": "RTR-TP-NG-CORE-001",
+        "site": "台北／南港",
+        "device_name": "台北南港核心路由器",
         "severity": "Critical",
         "status": "OPEN",
         "message": "Ping timeout",
     },
     {
-        "hostname": "TP-DIST-01",
-        "site": "Taipei",
-        "device_name": "Distribution Switch",
+        "hostname": "SW-TP-NG-DIST-001",
+        "site": "台北／南港",
+        "device_name": "台北南港匯聚交換器",
         "severity": "Major",
         "status": "OPEN",
         "message": "CPU High",
     },
     {
-        "hostname": "TP-OLT-01",
-        "site": "Taipei",
-        "device_name": "OLT",
+        "hostname": "OLT-TP-NG-ACCESS-001",
+        "site": "台北／南港",
+        "device_name": "台北南港接取設備",
         "severity": "Minor",
         "status": "ACK",
         "message": "Optical power low",
@@ -33,10 +33,16 @@ DEMO_ALARMS = (
 )
 
 
-def seed_demo_alarms(db: Session) -> int:
+def seed_initial_alarms(db: Session) -> int:
     inserted = 0
-
-    for alarm_data in DEMO_ALARMS:
+    legacy_ids = {"TP-CORE-01": "RTR-TP-NG-CORE-001", "TP-DIST-01": "SW-TP-NG-DIST-001", "TP-OLT-01": "OLT-TP-NG-ACCESS-001"}
+    for legacy_id, canonical_id in legacy_ids.items():
+        legacy = db.scalar(select(Alarm).where(Alarm.hostname == legacy_id))
+        canonical = db.scalar(select(Alarm).where(Alarm.hostname == canonical_id))
+        if legacy is not None and canonical is None:
+            legacy.hostname = canonical_id
+    db.flush()
+    for alarm_data in INITIAL_ALARMS:
         existing_id = db.scalar(
             select(Alarm.id).where(Alarm.hostname == alarm_data["hostname"])
         )
@@ -50,8 +56,8 @@ def seed_demo_alarms(db: Session) -> int:
 
 def main() -> None:
     with SessionLocal() as db:
-        inserted = seed_demo_alarms(db)
-    print(f"Demo alarms inserted: {inserted}")
+        inserted = seed_initial_alarms(db)
+    print(f"Initial alarms inserted: {inserted}")
 
 
 if __name__ == "__main__":

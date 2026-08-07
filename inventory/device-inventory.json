@@ -1,12 +1,6 @@
-{"version":1,"devices":[
-{"id":"internet","name":"Internet","ip":"203.0.113.1","type":"Internet","region":"全區","site":"外部","status":"normal","alarms":0},
-{"id":"RTR-TP-NG-CORE-001","name":"RTR-TP-NG-CORE-001","ip":"192.0.2.1","type":"Core Router","region":"台北","site":"南港","status":"normal","alarms":0},
-{"id":"SW-TP-NG-DIST-001","name":"SW-TP-NG-DIST-001","ip":"10.10.1.1","type":"Distribution Switch","region":"台北","site":"南港","status":"incident","alarms":2},
-{"id":"SW-NG-DIST-01","name":"SW-NG-DIST-01","ip":"10.10.2.1","type":"Distribution Switch","region":"台北","site":"南港","status":"unknown","alarms":1},
-{"id":"SW-NG-DIST-02","name":"SW-NG-DIST-02","ip":"10.10.2.2","type":"Distribution Switch","region":"台北","site":"南港","status":"unknown","alarms":1},
-{"id":"AP-NG-01","name":"AP-NG-01","ip":"10.10.3.10","type":"Access Switch","region":"台北","site":"南港","status":"unknown","alarms":0},
-{"id":"RTR-TP-NG-BACKUP-001","name":"RTR-TP-NG-BACKUP-001","ip":"10.20.1.1","type":"Router","region":"台北","site":"信義","status":"maintenance","alarms":0,"maintenance":{"type":"韌體升級","content":"例行韌體安全更新","start":"01:00","end":"03:00","owner":"Amy Chen","ticket":"CHG-20260725-008","impact":"信義備援路徑","note":"作業期間由主路徑承載"}},
-{"id":"SW-TY-001","name":"SW-TY-001","ip":"10.30.1.1","type":"Distribution Switch","region":"桃園","site":"桃園","status":"incident","alarms":1,"cpu":94},
-{"id":"OLT-TP-NG-ACCESS-001","name":"OLT-TP-NG-ACCESS-001","ip":"10.40.1.1","type":"Optical Device","region":"台北","site":"南港","status":"incident","alarms":1}],
-"links":[{"id":"link-core-dist","source":"RTR-TP-NG-CORE-001","target":"SW-TP-NG-DIST-001"},{"id":"link-dist-access","source":"SW-TP-NG-DIST-001","target":"OLT-TP-NG-ACCESS-001"},{"id":"link-backup-dist","source":"RTR-TP-NG-BACKUP-001","target":"SW-TP-NG-DIST-001","backup":true}],
-"topology":[{"id":"RTR-TP-NG-CORE-001","deviceId":"RTR-TP-NG-CORE-001","x":30,"y":20},{"id":"RTR-TP-NG-BACKUP-001","deviceId":"RTR-TP-NG-BACKUP-001","x":70,"y":20},{"id":"SW-TP-NG-DIST-001","deviceId":"SW-TP-NG-DIST-001","x":50,"y":50},{"id":"OLT-TP-NG-ACCESS-001","deviceId":"OLT-TP-NG-ACCESS-001","x":50,"y":80}]}
+{"version":2,"devices":[
+{"id":"RTR-TP-NG-CORE-001","name":"台北南港核心路由器","ip":"192.168.176.10","type":"Core Router","layer":"Core","region":"台北","site":"南港","status":"normal","alarms":0,"owner":"xxxx00001235"},
+{"id":"SW-TP-NG-DIST-001","name":"台北南港匯聚交換器","ip":"192.168.176.20","type":"Distribution Switch","layer":"Distribution","region":"台北","site":"南港","status":"normal","alarms":0,"owner":"jeff"},
+{"id":"OLT-TP-NG-ACCESS-001","name":"台北南港接取設備","ip":"192.168.176.30","type":"OLT / Access","layer":"Access","region":"台北","site":"南港","status":"normal","alarms":0,"owner":"稚深"}],
+"links":[{"id":"link-core-dist","source":"RTR-TP-NG-CORE-001","target":"SW-TP-NG-DIST-001"},{"id":"link-dist-access","source":"SW-TP-NG-DIST-001","target":"OLT-TP-NG-ACCESS-001"}],
+"topology":[{"id":"RTR-TP-NG-CORE-001","deviceId":"RTR-TP-NG-CORE-001","x":50,"y":18},{"id":"SW-TP-NG-DIST-001","deviceId":"SW-TP-NG-DIST-001","x":50,"y":50},{"id":"OLT-TP-NG-ACCESS-001","deviceId":"OLT-TP-NG-ACCESS-001","x":50,"y":82}]}

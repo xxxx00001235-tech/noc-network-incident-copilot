@@ -7,6 +7,7 @@ export type AlarmSocketState = 'connecting' | 'connected' | 'disconnected' | 'er
 export const alarmListRefreshEvent = 'noc-alarm-list-refresh';
 
 function socketUrl() {
+  if (!fastApiBaseUrl) return null;
   const base = new URL(fastApiBaseUrl, window.location.href);
   base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
   if (window.location.protocol === 'https:' && base.protocol !== 'wss:') return null;
@@ -19,7 +20,7 @@ function parseAlarm(payload: unknown): Alarm | null {
   if (!payload || typeof payload !== 'object') return null;
   const message = payload as Record<string, unknown>;
   if (message.type === 'ping' || message.type === 'connected') return null;
-  const envelope = (message.type === 'alarm' && message.data ? message.data : message) as Record<string, unknown>;
+  const envelope = (message.data && typeof message.data === 'object' ? message.data : message) as Record<string, unknown>;
   if ('deviceId' in envelope && 'deviceName' in envelope && 'content' in envelope) return envelope as unknown as Alarm;
   const source = (envelope.alarm ?? envelope) as FastApiAlarm;
   if (!source?.device_id || !source?.device_name || !source?.alarm) return null;

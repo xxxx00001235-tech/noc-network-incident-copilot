@@ -16,7 +16,7 @@ from sqlalchemy import func, inspect, select, text
 from sqlalchemy.orm import selectinload
 
 from fastapi_app.database import Base, IS_SQLITE, SessionLocal, engine
-from fastapi_app.models import AlarmHistory, Device, Incident, Timeline, TopologyLink, User
+from fastapi_app.models import AlarmHistory, CurrentAlarm, Device, Incident, Timeline, TopologyLink, User
 from fastapi_app.schemas import (
     AlarmHistoryResponse,
     DashboardStatisticsResponse,
@@ -26,11 +26,16 @@ from fastapi_app.schemas import (
 )
 from fastapi_app.routers.devices import router as devices_router
 from fastapi_app.routers.users import router as users_router
-from fastapi_app.services import JWT_ALGORITHM, JWT_SECRET, create_initial_admin, require_roles
+from fastapi_app.services import JWT_ALGORITHM, JWT_SECRET, create_initial_admin, create_local_users, require_roles
 from jose import JWTError, jwt
 
 
 app = FastAPI(title="NOC Alarm API")
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "healthy"}
 
 ROLE_PERMISSIONS = {
     "admin": {"read", "operate", "manage_devices", "manage_access"},
@@ -93,12 +98,13 @@ latest_alarm: dict[str, Any] | None = None
 INVENTORY_PATH = Path(__file__).resolve().parents[1] / "inventory" / "device-inventory.json"
 INVENTORY = json.loads(INVENTORY_PATH.read_text(encoding="utf-8"))
 
-DEMO_OVERRIDES = {
+PRIMARY_DEVICE_DEFAULTS = {
     "RTR-TP-NG-CORE-001": {"device_name": "台北南港核心路由器", "ip": "192.168.176.10", "device_type": "Core Router", "layer": "Core", "region": "台北", "site": "南港", "status": "normal"},
     "SW-TP-NG-DIST-001": {"device_name": "台北南港匯聚交換器", "ip": "192.168.176.20", "device_type": "Distribution Switch", "layer": "Distribution", "region": "台北", "site": "南港", "status": "normal"},
-    "OLT-TP-NG-ACCESS-001": {"device_name": "台北南港接取設備", "ip": "192.168.176.30", "device_type": "OLT", "layer": "Access", "region": "台北", "site": "南港", "status": "normal"},
+    "OLT-TP-NG-ACCESS-001": {"device_name": "台北南港接取設備", "ip": "192.168.176.30", "device_type": "OLT / Access", "layer": "Access", "region": "台北", "site": "南港", "status": "normal"},
 }
 DEVICE_ID_ALIASES = {"RTR-CORE-001": "RTR-TP-NG-CORE-001", "SW-TP-NG-001": "SW-TP-NG-DIST-001", "OLT-HC-001": "OLT-TP-NG-ACCESS-001", "RTR-TP-XY-001": "RTR-TP-NG-BACKUP-001"}
+RETIRED_PRESENTATION_DEVICE_IDS = {"internet", "RTR-TP-NG-BACKUP-001", "SW-NG-DIST-01", "SW-NG-DIST-02", "AP-NG-01", "SW-TY-001"}
 
 
 def infer_layer(device_type: str) -> str:
@@ -111,15 +117,56 @@ def infer_layer(device_type: str) -> str:
 
 
 def seed_devices(db) -> None:
-    if db.scalar(select(Device.id).limit(1)) is not None:
-        return
     for item in INVENTORY["devices"]:
         values = {"device_id": item["id"], "device_name": item["name"], "ip": item["ip"], "device_type": item["type"], "layer": infer_layer(item["type"]), "region": item["region"], "site": item["site"], "status": item["status"]}
-        values.update(DEMO_OVERRIDES.get(item["id"], {}))
-        db.add(Device(**values))
+        values.update(PRIMARY_DEVICE_DEFAULTS.get(item["id"], {}))
+        existing = db.scalar(select(Device).where(Device.device_id == item["id"]))
+        if existing is None:
+            db.add(Device(**values))
+        elif existing.device_id == "OLT-TP-NG-ACCESS-001" and existing.device_type in {"OLT", "Optical Device"}:
+            existing.device_type = "OLT / Access"
     db.flush()
+    if os.getenv("NOC_BOOTSTRAP_LOCAL_USERS", "false").lower() in {"1", "true", "yes"}:
+        owner_names = {"RTR-TP-NG-CORE-001": "admin", "SW-TP-NG-DIST-001": "engineer", "OLT-TP-NG-ACCESS-001": "operator"}
+        for device_id, username in owner_names.items():
+            device = db.scalar(select(Device).where(Device.device_id == device_id))
+            owner = db.scalar(select(User).where(User.username == username))
+            if device is not None and owner is not None and device.owner_user_id is None:
+                device.owner_user_id = owner.id
     for link in INVENTORY["links"]:
-        db.add(TopologyLink(source_device_id=link["source"], target_device_id=link["target"], link_type="backup" if link.get("backup") else "primary", status="normal"))
+        existing_link = db.scalar(select(TopologyLink).where(TopologyLink.source_device_id == link["source"], TopologyLink.target_device_id == link["target"]))
+        if existing_link is None:
+            db.add(TopologyLink(source_device_id=link["source"], target_device_id=link["target"], link_type="backup" if link.get("backup") else "primary", status="normal"))
+    db.commit()
+
+
+CURRENT_ALARMS = (
+    {"hostname": "RTR-TP-NG-CORE-001", "site": "台北／南港", "device_name": "台北南港核心路由器", "severity": "Critical", "status": "OPEN", "message": "Ping timeout"},
+    {"hostname": "SW-TP-NG-DIST-001", "site": "台北／南港", "device_name": "台北南港匯聚交換器", "severity": "Major", "status": "OPEN", "message": "CPU High"},
+    {"hostname": "OLT-TP-NG-ACCESS-001", "site": "台北／南港", "device_name": "台北南港接取設備", "severity": "Minor", "status": "ACK", "message": "Optical power low"},
+)
+
+
+def seed_current_alarms(db) -> None:
+    legacy_ids = {"TP-CORE-01": "RTR-TP-NG-CORE-001", "TP-DIST-01": "SW-TP-NG-DIST-001", "TP-OLT-01": "OLT-TP-NG-ACCESS-001"}
+    for legacy_id, canonical_id in legacy_ids.items():
+        legacy = db.scalar(select(CurrentAlarm).where(CurrentAlarm.hostname == legacy_id))
+        canonical = db.scalar(select(CurrentAlarm).where(CurrentAlarm.hostname == canonical_id))
+        if legacy is not None and canonical is None:
+            legacy.hostname = canonical_id
+    db.flush()
+    for values in CURRENT_ALARMS:
+        alarm = db.scalar(select(CurrentAlarm).where(CurrentAlarm.hostname == values["hostname"]))
+        if alarm is None:
+            db.add(CurrentAlarm(**values))
+        else:
+            for key in ("site", "device_name"):
+                setattr(alarm, key, values[key])
+    for device_id in (item["hostname"] for item in CURRENT_ALARMS):
+        device = db.scalar(select(Device).where(Device.device_id == device_id))
+        if device is not None and device.status != "maintenance":
+            has_active = db.scalar(select(CurrentAlarm.id).where(CurrentAlarm.hostname == device_id, CurrentAlarm.status.in_(("OPEN", "ACK", "ACKNOWLEDGED"))).limit(1)) is not None
+            device.status = "incident" if has_active else "normal"
     db.commit()
 
 
@@ -173,14 +220,16 @@ def migrate_account_incident_columns() -> None:
             connection.execute(text("UPDATE incidents SET duration_seconds = duration WHERE duration_seconds IS NULL AND duration IS NOT NULL"))
 
 
+Base.metadata.create_all(bind=engine)
 if IS_SQLITE:
     # Local fallback compatibility only. PostgreSQL schema is managed by Alembic.
-    Base.metadata.create_all(bind=engine)
     migrate_alarm_lifecycle_columns()
     migrate_account_incident_columns()
 with SessionLocal() as startup_db:
     create_initial_admin(startup_db)
+    create_local_users(startup_db)
     seed_devices(startup_db)
+    seed_current_alarms(startup_db)
 app.include_router(users_router)
 app.include_router(devices_router)
 
@@ -197,12 +246,13 @@ async def security_headers_middleware(request: Request, call_next):
 
 def db_devices() -> dict[str, dict[str, Any]]:
     with SessionLocal() as db:
-        return {item.device_id: {"device_name": item.device_name, "ip": item.ip, "device_type": item.device_type, "status": item.status, "region": item.region, "site": item.site, "location": item.location} for item in db.scalars(select(Device))}
+        return {item.device_id: {"device_name": item.device_name, "ip": item.ip, "device_type": item.device_type, "status": item.status, "region": item.region, "site": item.site, "location": item.location} for item in db.scalars(select(Device)) if item.device_id not in RETIRED_PRESENTATION_DEVICE_IDS}
 
 
 def db_links() -> list[dict[str, Any]]:
+    visible_device_ids = set(db_devices())
     with SessionLocal() as db:
-        return [{"id": str(link.id), "source": link.source_device_id, "target": link.target_device_id, **({"backup": True} if link.link_type == "backup" else {}), "link_type": link.link_type, "status": link.status} for link in db.scalars(select(TopologyLink))]
+        return [{"id": str(link.id), "source": link.source_device_id, "target": link.target_device_id, **({"backup": True} if link.link_type == "backup" else {}), "link_type": link.link_type, "status": link.status} for link in db.scalars(select(TopologyLink)) if link.source_device_id in visible_device_ids and link.target_device_id in visible_device_ids]
 
 
 def device_node(device_id: str) -> dict[str, Any]:
@@ -268,6 +318,18 @@ class TeamsReportInput(BaseModel):
     report_type: str = "initial"
 
 
+@app.get("/alarms")
+async def get_current_alarms() -> list[dict[str, Any]]:
+    with SessionLocal() as db:
+        rows = list(db.scalars(select(CurrentAlarm).order_by(CurrentAlarm.id)))
+        return [
+            {"id": row.id, "hostname": row.hostname, "site": row.site, "device_name": row.device_name,
+             "severity": row.severity, "status": row.status, "message": row.message,
+             "created_at": row.created_at.isoformat()}
+            for row in rows
+        ]
+
+
 def build_ai_diagnosis(device_id: str, alarm: dict[str, Any] | None = None) -> dict[str, Any]:
     alarm = alarm or alarm_for(device_id)
     text = str(alarm.get("alarm", "")).lower()
@@ -305,11 +367,15 @@ def build_ai_timeline(device_id: str, alarm: dict[str, Any] | None = None) -> li
     timestamp = str(alarm.get("time") or datetime.now(timezone.utc).isoformat())
     recovered = str(alarm.get("status", "")).upper() == "UP"
     return [
-        {"stage": "Alarm", "actor": "Monitoring", "time": timestamp, "detail": str(alarm.get("alarm", "Alarm received"))},
-        {"stage": "AI Analysis", "actor": "AI Copilot", "time": diagnosis["generated_at"], "detail": diagnosis["root_cause"]},
-        {"stage": "Operator", "actor": "NOC Operator", "time": diagnosis["generated_at"], "detail": "確認告警並執行初步查測"},
-        {"stage": "Engineer", "actor": "Network Engineer", "time": diagnosis["generated_at"], "detail": "檢查設備與上游連線"},
-        {"stage": "Recovery", "actor": "Monitoring", "time": diagnosis["generated_at"], "detail": "服務已恢復" if recovered else "等待服務恢復"},
+        {"stage": "收到告警", "actor": "監控系統", "time": timestamp, "detail": str(alarm.get("alarm", "收到告警"))},
+        {"stage": "AI 初步分析", "actor": "AI Copilot", "time": diagnosis["generated_at"], "detail": diagnosis["root_cause"]},
+        {"stage": "開始查測", "actor": "NOC 值班人員", "time": diagnosis["generated_at"], "detail": "檢查設備狀態與上下游連線"},
+        {"stage": "設備管理員確認", "actor": "設備管理員", "time": diagnosis["generated_at"], "detail": "確認設備狀態與處理方式"},
+        {"stage": "產生初報", "actor": "NOC 值班人員", "time": diagnosis["generated_at"], "detail": "建立障礙初報"},
+        {"stage": "更新處理", "actor": "NOC 值班人員", "time": diagnosis["generated_at"], "detail": "彙整最新處理進度"},
+        {"stage": "產生續報", "actor": "NOC 值班人員", "time": diagnosis["generated_at"], "detail": "建立障礙續報"},
+        {"stage": "恢復", "actor": "監控系統", "time": diagnosis["generated_at"], "detail": "服務已恢復" if recovered else "等待服務恢復"},
+        {"stage": "產生結報", "actor": "NOC 值班人員", "time": diagnosis["generated_at"], "detail": "建立障礙結報" if recovered else "待恢復後產生結報"},
     ]
 
 
@@ -341,6 +407,20 @@ async def publish_alarm(alarm: AlarmInput) -> dict[str, Any]:
         device.status = "normal" if recovered else "incident"
         severity = alarm.severity or ("Normal" if device.status == "normal" else "Critical")
         data["severity"] = severity
+        if recovered:
+            current_alarm = db.scalar(
+                select(CurrentAlarm)
+                .where(CurrentAlarm.hostname == device.device_id, CurrentAlarm.status.in_(("OPEN", "ACK", "ACKNOWLEDGED")))
+                .order_by(CurrentAlarm.id.desc())
+            )
+            if current_alarm is not None:
+                current_alarm.status = "CLOSED"
+        else:
+            db.add(CurrentAlarm(
+                hostname=device.device_id, site=f"{device.region}／{device.site}",
+                device_name=device.device_name, severity=severity, status="OPEN",
+                message=alarm.alarm, created_at=event_time,
+            ))
         history = db.scalar(
             select(AlarmHistory)
             .where(AlarmHistory.device_id == device.device_id, AlarmHistory.status == "OPEN")
@@ -401,7 +481,7 @@ async def publish_alarm(alarm: AlarmInput) -> dict[str, Any]:
     latest_alarm = {"status": "ok", "alarm": data, "device_status": device_status}
     ai_diagnosis = build_ai_diagnosis(alarm.device_id, data)
     await broadcast({
-        "type": "alarm",
+        "type": "alarm.updated" if recovered else "alarm.created",
         "data": latest_alarm,
         "ai_diagnosis": ai_diagnosis,
         "device_status": device_status,
@@ -522,8 +602,8 @@ async def get_latest_alarm() -> dict[str, Any]:
     return {
         "status": "ok",
         "alarm": {
-            "device_id": "SW-TP-NG-001",
-            "device_name": "SW-TP-NG-001",
+            "device_id": "SW-TP-NG-DIST-001",
+            "device_name": "台北南港匯聚交換器",
             "alarm": "WebSocket service ready",
             "status": "UP",
             "severity": "Normal",

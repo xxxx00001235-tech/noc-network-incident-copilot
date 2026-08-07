@@ -4,7 +4,7 @@ export class ApiError extends Error {
 }
 
 const backendStatusEvent = 'noc-backend-status';
-const demoSafeModeMessage = '後端服務未連線，目前使用 Demo Safe Mode';
+const demoSafeModeMessage = '資料服務暫時離線，正在重新連線';
 const configuredBaseUrl = import.meta.env.VITE_FASTAPI_BASE_URL?.trim();
 const localFallbackBaseUrl = 'http://127.0.0.1:8000';
 
@@ -24,7 +24,7 @@ function resolveFastApiBaseUrl() {
 }
 
 const resolvedFastApiBaseUrl = resolveFastApiBaseUrl();
-const fastApiBaseUrl = resolvedFastApiBaseUrl || localFallbackBaseUrl;
+const fastApiBaseUrl = resolvedFastApiBaseUrl;
 let backendAvailable = resolvedFastApiBaseUrl !== null;
 
 function setBackendAvailable(available: boolean, reason?: unknown) {

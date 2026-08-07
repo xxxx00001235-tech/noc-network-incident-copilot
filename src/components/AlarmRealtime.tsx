@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { alarmListRefreshEvent, connectAlarmSocket } from '../api/alarmSocket';
-import { fetchLatestAlarm } from '../api/alarms';
+import { connectAlarmSocket } from '../api/alarmSocket';
 import { useNocStore } from '../store/useNocStore';
 import type { Alarm } from '../types';
 
@@ -30,15 +29,19 @@ export function AlarmRealtime() {
   const receiveRealtimeAlarm = useNocStore(state => state.receiveRealtimeAlarm);
   const setRealtimeState = useNocStore(state => state.setRealtimeState);
   const setAiDiagnosis = useNocStore(state => state.setAiDiagnosis);
+  const refreshAuthoritativeData = useNocStore(state => state.refreshAuthoritativeData);
   const seen = useRef(new Set<string>());
+
+  const eventKey = (alarm: Alarm) => `${alarm.id}:${alarm.status}:${alarm.updated}`;
 
   useEffect(() => connectAlarmSocket({
     onState: setRealtimeState,
     onDiagnosis:setAiDiagnosis,
-    onAlarmChange: () => window.dispatchEvent(new Event(alarmListRefreshEvent)),
+    onAlarmChange: () => { void refreshAuthoritativeData(); },
     onAlarm: alarm => {
-      const isNew = !seen.current.has(alarm.id);
-      seen.current.add(alarm.id);
+      const key = eventKey(alarm);
+      const isNew = !seen.current.has(key);
+      seen.current.add(key);
       if (isNew) {
         receiveRealtimeAlarm(alarm);
         playAlarmTone(alarm.severity);
@@ -46,7 +49,7 @@ export function AlarmRealtime() {
         syncAlarm(alarm);
       }
     },
-  }), [receiveRealtimeAlarm, setAiDiagnosis, setRealtimeState, syncAlarm]);
+  }), [receiveRealtimeAlarm, refreshAuthoritativeData, setAiDiagnosis, setRealtimeState, syncAlarm]);
 
   useEffect(() => {
     const unlockAudio = () => {
@@ -60,12 +63,7 @@ export function AlarmRealtime() {
     };
   }, []);
 
-  useEffect(() => {
-    void fetchLatestAlarm().then(alarm => {
-      seen.current.add(alarm.id);
-      syncAlarm(alarm);
-    }).catch(() => undefined);
-  }, [syncAlarm]);
+  useEffect(() => { void refreshAuthoritativeData(); }, [refreshAuthoritativeData]);
 
   return null;
 }

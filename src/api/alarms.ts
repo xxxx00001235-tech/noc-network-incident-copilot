@@ -56,10 +56,7 @@ export async function fetchLatestAlarm(): Promise<Alarm> {
 }
 
 export async function fetchAlarms(): Promise<Alarm[]> {
-  const response = await apiRequest<PostgresAlarm[]>('/alarms', {
-    // The Vite proxy avoids a CORS dependency in local development.
-    baseUrl: import.meta.env.DEV ? '' : undefined,
-  });
+  const response = await apiRequest<PostgresAlarm[]>('/alarms');
   return response.map(normalizePostgresAlarm);
 }
 
@@ -85,7 +82,7 @@ export function normalizePostgresAlarm(source: PostgresAlarm): Alarm {
     status: source.status,
     owner: '未指派',
     maintenance: false,
-    updated: timestamp,
+    updated: source.created_at,
     incidentId: `INC-${id}`,
   };
 }
@@ -95,7 +92,7 @@ export function normalizeFastApiAlarm(response: LatestAlarmResponse): Alarm {
   const location = locationParts(source.location);
   const id = response.source_file
     ? `FASTAPI-${response.source_file.replace(/^alarm_|\.json$/g, '')}`
-    : `FASTAPI-${source.device_id}-${source.time || 'latest'}`;
+    : `FASTAPI-${source.device_id}`;
 
   return {
     id,
