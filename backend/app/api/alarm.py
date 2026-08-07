@@ -1,36 +1,17 @@
-from fastapi import APIRouter
+from typing import Annotated
 
-from app.schemas.alarm import AlarmBase
+from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.alarm import Alarm
+from app.schemas.alarm import AlarmRead
 
 
 router = APIRouter(prefix="/alarms", tags=["alarms"])
 
 
-@router.get("", response_model=list[AlarmBase])
-def get_alarms() -> list[AlarmBase]:
-    return [
-        AlarmBase(
-            hostname="TP-CORE-01",
-            site="台北",
-            device_name="Core Router",
-            severity="Critical",
-            status="OPEN",
-            message="Ping timeout",
-        ),
-        AlarmBase(
-            hostname="TP-DIST-01",
-            site="台北",
-            device_name="Distribution Switch",
-            severity="Major",
-            status="OPEN",
-            message="CPU High",
-        ),
-        AlarmBase(
-            hostname="TP-OLT-01",
-            site="台北",
-            device_name="OLT",
-            severity="Minor",
-            status="ACK",
-            message="Optical power low",
-        ),
-    ]
+@router.get("", response_model=list[AlarmRead])
+def get_alarms(db: Annotated[Session, Depends(get_db)]) -> list[Alarm]:
+    return list(db.scalars(select(Alarm).order_by(Alarm.id)).all())
