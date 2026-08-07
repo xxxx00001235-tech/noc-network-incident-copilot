@@ -66,7 +66,7 @@ def test_websocket_broadcast_contains_realtime_noc_snapshot() -> None:
         assert websocket.receive_json() == {"type": "connected"}
         inject("DOWN", "Critical")
         message = websocket.receive_json()
-        assert message["type"] == "alarm"
+        assert message["type"] == "alarm.created"
         assert message["device_status"]["device_id"] == DEVICE_ID
         assert message["device_status"]["status"] == "incident"
         assert message["dashboard"]["incident_devices"] >= 1
@@ -84,6 +84,7 @@ def test_new_read_apis_keep_rbac() -> None:
 
 
 def test_down_up_closes_same_incident_with_complete_timing() -> None:
+    inject("UP", "Normal")
     down_time = "2026-08-05T01:00:00+00:00"
     up_time = "2026-08-05T01:02:30+00:00"
     down = client.post("/api/alarms", headers=HEADERS, json={

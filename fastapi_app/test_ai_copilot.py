@@ -22,7 +22,8 @@ def test_ai_timeline_has_required_stages() -> None:
     response = client.get(f"/api/ai/timeline/{DEVICE_ID}", headers=HEADERS)
     assert response.status_code == 200
     assert [event["stage"] for event in response.json()["events"]] == [
-        "Alarm", "AI Analysis", "Operator", "Engineer", "Recovery"
+        "收到告警", "AI 初步分析", "開始查測", "設備管理員確認", "產生初報",
+        "更新處理", "產生續報", "恢復", "產生結報",
     ]
 
 
@@ -49,9 +50,10 @@ def test_alarm_websocket_includes_realtime_ai_diagnosis() -> None:
         )
         assert response.status_code == 202
         message = websocket.receive_json()
-        assert message["type"] == "alarm"
+        assert message["type"] == "alarm.created"
         assert message["ai_diagnosis"]["device_id"] == DEVICE_ID
         assert message["ai_diagnosis"]["root_cause"]
+    client.post("/api/alarms", headers=HEADERS, json={"device_id": DEVICE_ID, "device_name": "ignored", "alarm": "Optical LOS", "status": "UP", "severity": "Normal"})
 
 
 def test_ai_apis_keep_rbac() -> None:

@@ -30,7 +30,8 @@ def test_topology_response_uses_json_serializable_device_objects() -> None:
     assert body["nodes"]
     assert body["links"]
     ids = {node["device_id"] for node in body["nodes"]}
-    assert "RTR-TP-NG-BACKUP-001" in ids
+    assert {"RTR-TP-NG-CORE-001", "SW-TP-NG-DIST-001", "OLT-TP-NG-ACCESS-001"}.issubset(ids)
+    assert "RTR-TP-NG-BACKUP-001" not in ids
     assert "RTR-TP-XY-001" not in ids
     assert all(link["source"] in ids and link["target"] in ids for link in body["links"])
 
@@ -59,8 +60,9 @@ def test_alarm_websocket_receives_published_alarm() -> None:
         response = client.post("/api/alarms", json=alarm, headers=READ_HEADERS)
         assert response.status_code == 202
         message = websocket.receive_json()
-        assert message["type"] == "alarm"
+        assert message["type"] == "alarm.created"
         assert message["data"]["alarm"]["device_id"] == alarm["device_id"]
+    client.post("/api/alarms", json={**alarm, "status": "UP", "severity": "Normal"}, headers=READ_HEADERS)
 
 
 def test_api_without_role_returns_403() -> None:

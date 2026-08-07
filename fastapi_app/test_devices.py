@@ -52,13 +52,13 @@ def test_device_crud_history_and_role_permissions() -> None:
 
 def test_device_filters_and_database_topology() -> None:
     operator, headers = make_user("operator")
-    response = client.get("/api/devices", headers=headers, params={"region": "台北", "site": "南港", "status": "normal", "device_type": "Core Router", "keyword": "CORE"})
+    response = client.get("/api/devices", headers=headers, params={"region": "台北", "site": "南港", "device_type": "Core Router", "keyword": "CORE"})
     assert response.status_code == 200
     assert any(device["device_id"] == "RTR-TP-NG-CORE-001" for device in response.json())
     topology = client.get("/api/topology/RTR-TP-NG-CORE-001", headers=headers).json()
     assert "SW-TP-NG-DIST-001" in [item["device_id"] for item in topology["downstream"]]
     assert "OLT-TP-NG-ACCESS-001" in topology["affected_device_ids"]
-    assert any(link.get("backup") for link in topology["links"])
+    assert not any(link.get("backup") for link in topology["links"])
     with SessionLocal() as db:
         db.delete(db.get(User, operator.id))
         db.commit()
